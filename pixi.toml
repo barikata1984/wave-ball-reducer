@@ -1,0 +1,20 @@
+[workspace]
+name = "wave-ball-reducer"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.12.*"
+numpy = "*"
+pytest = "*"
+ruff = ">=0.17.4,<0.18"
+
+[pypi-dependencies]
+build123d = "*"
+
+[tasks]
+build = "python reducer.py"
+test = "python -m pytest tests -v"
+
+
+view = "python -m http.server 8765 --bind 127.0.0.1"

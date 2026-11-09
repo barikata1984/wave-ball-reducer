@@ -1,0 +1,6 @@
+out/
+.pixi/
+__pycache__/
+.ruff_cache/
+*.pdf
+.pytest_cache/
