@@ -1,0 +1,15 @@
+# DECISIONS
+
+- 2026-11-10 鋼球は直径 6mm、範囲は論文 Fig.1 全体、CAD は build123d — ユーザー確認済み ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
+- 2026-11-10 減速比の式を i = −(nb−1)/2 とする / 却下: i = nb−1 — エージェント判断 ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
+- 2026-11-10 K の定義に論文式 (5) K = A/r0 を採用し、Table II の係数 2 を誤植とみなす — エージェント判断 ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
+- 2026-11-10 減速比 10 (鋼球 21 個)、溝の山の削れなし / 却下: 減速比 7.5 (鋼球 16 個)、減速比 15 (鋼球 31 個)、山の削れを許す — ユーザー確認済み ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
+- 2026-11-10 削れ回避は鋼球の間隔を広げて行い、K と K2 を探索で決める (K=0.275, K2=2.28) / 却下: 鋼球を小さくする — ユーザー確認済み ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
+- 2026-11-10 運動伝達部をボール式オルダム継手として設計する — エージェント判断 ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
+- 2026-11-10 ハウジング壁厚を 5mm にし、ねじ位置だけ外側に耳を出す — ユーザー確認済み ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
+- 2026-11-10 軸受を手持ちの 608ZZ に統一する (偏心カム 1、入力軸 1) / 却下: 688ZZ と 6805ZZ — ユーザー確認済み ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
+- 2026-11-10 出力円板はふたの中央穴のすべり軸受で支える / 却下: 608ZZ ガイドローラー 3 個、入力軸先端の 608ZZ で支える — ユーザー確認済み ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
+- 2026-11-10 締結はハウジングの六角穴 (内接円 3.0mm) へのナットなしねじ込みとし、M3×6/8/12/16 から最短を選ぶ / 却下: M3×45 通しボルトとナット — ユーザー確認済み ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
+- 2026-11-10 板厚は部品ごとの最小値とし、溝底の肉を 3mm にする / 却下: 全円板一律 8.5mm、溝底の肉 1.5mm — ユーザー確認済み ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
+- 2026-11-10 外径 10cm 化は今回行わない — ユーザー確認済み ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
+- 2026-11-10 論文 PDF はリポジトリに含めず `literature/papers/` に置き、README に書誌だけ書く — ユーザー確認済み ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
