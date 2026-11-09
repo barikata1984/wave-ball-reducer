@@ -1,0 +1,106 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>wave-ball-reducer parts</title>
+<style>
+  body { margin: 0; overflow: hidden; font-family: sans-serif; }
+  #panel { position: absolute; top: 8px; left: 8px; background: #fffd; padding: 8px; border-radius: 4px; }
+  .label { color: #000; background: #fffc; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="panel"></div>
+<script type="module">
+import * as THREE from 'three';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+// ?assembled → out/assembled/ at assembly positions; otherwise print-pose parts in a grid
+const ASM = new URLSearchParams(location.search).has('assembled');
+const PARTS = ASM ? [
+  '1_input_shaft', '2_bearing_608ZZ', '3_end_cover', '4_transmission_balls', '5_center_disc',
+  '6_hypocycloid_disc', '7_reduction_balls', '8_epicycloid_disc_output', '9_cage',
+  '10_housing', '11_lid', '13_bearing_608ZZ',
+].map(n => `out/assembled/${n}.stl`) : [
+  'out/1_input_shaft.stl', 'out/3_end_cover.stl', 'out/5_center_disc.stl',
+  'out/6_hypocycloid_disc.stl', 'out/8_epicycloid_disc_output.stl', 'out/9_cage.stl',
+  'out/10_housing.stl', 'out/11_lid.stl',
+];
+const GAP = 20; // mm between parts
+
+THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xeeeeee);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 1, 10000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+labelRenderer.domElement.style.cssText = 'position:absolute;top:0;pointer-events:none';
+document.body.appendChild(labelRenderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.5));
+const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+sun.position.set(200, -300, 500);
+scene.add(sun);
+
+const geoms = await Promise.all(PARTS.map(p => new STLLoader().loadAsync(p)));
+geoms.forEach(g => g.computeBoundingBox());
+const cell = Math.max(...geoms.map(g => {
+  const s = g.boundingBox.getSize(new THREE.Vector3());
+  return Math.max(s.x, s.y);
+})) + GAP;
+const cols = Math.ceil(Math.sqrt(PARTS.length));
+const panel = document.getElementById('panel');
+
+geoms.forEach((g, i) => {
+  const bb = g.boundingBox, c = bb.getCenter(new THREE.Vector3());
+  if (!ASM) g.translate(-c.x, -c.y, -bb.min.z); // center in XY, sit on z=0
+  const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+    color: new THREE.Color().setHSL(i / PARTS.length, 0.6, 0.55), metalness: 0.1, roughness: 0.6,
+  }));
+  if (!ASM) mesh.position.set((i % cols) * cell, -Math.floor(i / cols) * cell, 0);
+  const name = PARTS[i].slice(PARTS[i].lastIndexOf('/') + 1, -4);
+  const div = document.createElement('div');
+  div.className = 'label';
+  div.textContent = name;
+  const label = new CSS2DObject(div);
+  label.position.set(0, 0, bb.max.z - bb.min.z + 5);
+  if (!ASM) mesh.add(label); // labels would pile up on top of each other when assembled
+  scene.add(mesh);
+  const row = document.createElement('label');
+  row.innerHTML = `<input type="checkbox" checked> ${name}<br>`;
+  row.querySelector('input').onchange = e => { mesh.visible = e.target.checked; div.style.display = e.target.checked ? '' : 'none'; };
+  panel.appendChild(row);
+});
+
+const rows = Math.ceil(PARTS.length / cols);
+const cx = ASM ? 0 : (cols - 1) * cell / 2, cy = ASM ? 0 : -(rows - 1) * cell / 2;
+const grid = new THREE.GridHelper(cols * cell * 1.5, 30);
+grid.rotation.x = Math.PI / 2; // XY plane
+grid.position.set(cx, cy, 0);
+scene.add(grid, new THREE.AxesHelper(cell / 2));
+controls.target.set(cx, cy, 0);
+if (ASM) camera.position.set(0, -180, 140); else camera.position.set(cx, cy - cols * cell * 1.2, cols * cell);
+controls.update();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera); });
+</script>
+</body>
+</html>
