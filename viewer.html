@@ -23,9 +23,15 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
-// ?assembled → out/assembled/ at assembly positions; otherwise print-pose parts in a grid
-const ASM = new URLSearchParams(location.search).has('assembled');
-const PARTS = ASM ? [
+// ?assembled → <dir>/assembled/ at assembly positions; otherwise print-pose parts in a grid
+// ?model=planetary → out_planetary/, part names from its parts.json
+const Q = new URLSearchParams(location.search);
+const ASM = Q.has('assembled');
+const PARTS = Q.get('model') === 'planetary'
+  ? await fetch('out_planetary/parts.json').then(r => r.json()).then(j => ASM
+    ? j.assembled.map(n => `out_planetary/assembled/${n}.stl`)
+    : j.printed.map(n => `out_planetary/${n}.stl`))
+  : ASM ? [
   '1_input_shaft', '2_bearing_608ZZ', '3_end_cover', '4_transmission_balls', '5_center_disc',
   '6_hypocycloid_disc', '7_reduction_balls', '8_epicycloid_disc_output', '9_cage',
   '10_housing', '11_lid', '13_bearing_608ZZ',
