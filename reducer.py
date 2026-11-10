@@ -73,8 +73,8 @@ class Params:
     rb: float = 3.0  # steel ball radius (both sections), bought part
     nb: int = 21  # reduction balls -> ratio (nb-1)/2 = 10
     # K, K2: smallest housing with A >= 0.6 mm and 10 % curvature margin, see search_K_K2()
-    K: float = 0.275  # cycloid factor A/r0 (Table I wants 0.42-0.63, which undercuts)
-    K2: float = 2.28  # ball-spacing coefficient, sets Rb (paper: 1.0-1.15)
+    K: float = 0.28  # cycloid factor A/r0 (Table I wants 0.42-0.63, which undercuts)
+    K2: float = 2.24  # ball-spacing coefficient, sets Rb (paper: 1.0-1.15)
     beta_deg: float = 32.0  # eq.10 depth parameter; sets disc gap 2 rb sin(beta) -> cage thickness
     gothic_deg: float = 45.0  # contact angle of the gothic arch arcs
     conformity: float = 1.04  # gothic arc radius / groove radius
@@ -85,14 +85,14 @@ class Params:
     bearing: str = "608ZZ"  # 2: eccentric bearing in disc 6, also 13 input bearing
     # disc 8 hub runs in the lid bore (plain bearing); a rib under the lid takes its lift-off
     hub_r: float = 20.0
-    lid_bore_clr: float = 0.20  # radial, hub to lid bore
-    lid_axial_clr: float = 0.30  # disc 8 top face to the lid rib
+    lid_bore_clr: float = 0.05  # radial, hub to lid bore
+    lid_axial_clr: float = 0.05  # disc 8 top face to the lid rib
     lid_rib_w: float = 1.5
     lid_rib_h: float = 1.0
     # FDM tolerances (radial, i.e. per side)
-    ball_clr: float = 0.15  # ball vs groove / cage pocket
-    fit_clr: float = 0.10  # bearing seats and journals in bearing bores
-    slide_clr: float = 0.30  # sliding / rotating printed surfaces
+    ball_clr: float = 0.05  # ball vs groove / cage pocket
+    fit_clr: float = 0.05  # bearing seats and journals in bearing bores
+    slide_clr: float = 0.05  # sliding / rotating printed surfaces
     min_wall: float = 1.2
     # design targets
     a_min: float = 0.6  # minimum eccentricity (FDM error 0.1-0.2 mm)
