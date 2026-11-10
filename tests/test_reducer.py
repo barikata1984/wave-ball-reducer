@@ -55,7 +55,8 @@ def test_defaults_come_from_search():
     assert d == pytest.approx(2 * p.R_cover) and d < 200
     assert p.A >= p.a_min
     for kind in ("epi", "hypo"):
-        assert min_curvature_radius(p, kind) >= p.curv_margin * p.rg
+        assert min_curvature_radius(p, kind) >= p.curv_margin * p.face_half_width
+        assert p.face_half_width > p.contact_offset  # (a) is stricter than (b)
 
 
 def test_design_checks():

@@ -73,8 +73,8 @@ class Params:
     rb: float = 3.0  # steel ball radius (both sections), bought part
     nb: int = 21  # reduction balls -> ratio (nb-1)/2 = 10
     # K, K2: smallest housing with A >= 0.6 mm and 10 % curvature margin, see search_K_K2()
-    K: float = 0.28  # cycloid factor A/r0 (Table I wants 0.42-0.63, which undercuts)
-    K2: float = 2.24  # ball-spacing coefficient, sets Rb (paper: 1.0-1.15)
+    K: float = 0.295  # cycloid factor A/r0 (Table I wants 0.42-0.63, which undercuts)
+    K2: float = 2.13  # ball-spacing coefficient, sets Rb (paper: 1.0-1.15)
     beta_deg: float = 32.0  # eq.10 depth parameter; sets disc gap 2 rb sin(beta) -> cage thickness
     gothic_deg: float = 45.0  # contact angle of the gothic arch arcs
     conformity: float = 1.04  # gothic arc radius / groove radius
@@ -96,7 +96,7 @@ class Params:
     min_wall: float = 1.2
     # design targets
     a_min: float = 0.6  # minimum eccentricity (FDM error 0.1-0.2 mm)
-    curv_margin: float = 1.10  # min centre-line curvature radius / rg
+    curv_margin: float = 1.10  # min centre-line curvature radius / groove half-width at the face
     cage_min_t: float = 2.5
     # fasteners and drive
     hex_af: float = 3.0  # hex socket in the input shaft (3 mm hex key / hex bit)
@@ -151,6 +151,20 @@ class Params:
         arc = self.conformity * self.rg
         off, g = arc - self.rg, math.radians(self.gothic_deg)
         return math.sqrt(arc**2 - (off * math.cos(g)) ** 2) - off * math.sin(g) - self.s
+
+    @property
+    def face_half_width(self) -> float:
+        """Groove half-width at the disc face (widest point of the cut; the lens is widest above
+        the face). If the centre-line curvature radius is below this, the sweep overlaps itself
+        on the inner side of the bend and cuts away the land next to the groove."""
+        arc = self.conformity * self.rg
+        off, g = arc - self.rg, math.radians(self.gothic_deg)
+        return math.sqrt(arc**2 - (self.s + off * math.sin(g)) ** 2) - off * math.cos(g)
+
+    @property
+    def contact_offset(self) -> float:
+        """Horizontal distance of a gothic contact point from the centre line (rg cos g)."""
+        return self.rg * math.cos(math.radians(self.gothic_deg))
 
     @property
     def cage_t(self) -> float:
@@ -279,8 +293,11 @@ def design_warnings(p: Params) -> list[str]:
     w = []
     for kind in ("epi", "hypo"):
         rho = min_curvature_radius(p, kind)
-        if rho <= p.curv_margin * p.rg:
-            w.append(f"undercut: {kind} min curvature radius {rho:.3f} < {p.curv_margin} * rg")
+        if rho <= p.curv_margin * p.face_half_width:
+            w.append(
+                f"undercut: {kind} min curvature radius {rho:.3f} "
+                f"< {p.curv_margin} * face half-width {p.face_half_width:.3f}"
+            )
     if p.A < p.a_min:
         w.append(f"eccentricity A={p.A:.3f} < {p.a_min}")
     if p.rg * math.sin(math.radians(p.gothic_deg)) <= p.s:
@@ -318,7 +335,7 @@ def crossing_counts(p: Params, ratio: float, steps: int = 97) -> list[int]:
 
 
 def search_K_K2(p: Params, step: float = 0.005) -> tuple[float, float, float]:
-    """Smallest outer diameter with A >= a_min and curvature >= curv_margin*rg.
+    """Smallest outer diameter with A >= a_min and curvature >= curv_margin*face_half_width.
 
     At fixed K the groove shape scales with K2 (Rb, r0, A all proportional to K2), so for each
     K the minimum K2 is the largest of the two linear bounds. Returns (K, K2, outer diameter).
@@ -327,7 +344,7 @@ def search_K_K2(p: Params, step: float = 0.005) -> tuple[float, float, float]:
     for K in np.arange(0.05, 0.6 + step / 2, step):
         unit = replace(p, K=float(K), K2=1.0)
         rho1 = min(min_curvature_radius(unit, k, 4000) for k in ("epi", "hypo"))
-        K2 = max(1.0, p.a_min / unit.A, p.curv_margin * p.rg / rho1)
+        K2 = max(1.0, p.a_min / unit.A, p.curv_margin * p.face_half_width / rho1)
         K2 = math.ceil(K2 * 100) / 100
         d = 2 * replace(p, K=float(K), K2=K2).R_cover
         if best is None or d < best[2]:
