@@ -9,3 +9,8 @@
 - [ ] GM5208-24 の巻線抵抗を測り、旧版 (25.6 Ω) か現行版 (13.7 Ω) かを確定する ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
 - [ ] 遊星減速機を印刷し、組み立て順序、逆駆動トルク、効率、連続運転時の発熱を確かめる ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
 - [ ] 鋼球式の 2 段化 (外径約 60mm、減速比 12.25) や nb=11 の小型試験版を作るか決める ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
+- [ ] 駆動回路が電流でトルクを指令できるか確かめ、疲労試験 (出力固定、設計トルクを 10⁵ 回) の手順と固定具を作る ([議事録](logs/2026-11-13_planetary-fixes-and-stepped-reducer.md))
+- [ ] 疲労試験の結果で歯元応力の上限を決め、段付き遊星の歯幅と高さを決め直す ([議事録](logs/2026-11-13_planetary-fixes-and-stepped-reducer.md))
+- [ ] 上限が決まってから段付きボルト (直径 5 mm 部) と座金 (内径 5、厚さ 0.3 以下) を注文する ([議事録](logs/2026-11-13_planetary-fixes-and-stepped-reducer.md))
+- [ ] 段付き遊星の蓋をねじ込み式 (内ねじ、ピッチ 2 mm、45°、戻り止め付き) に変える ([議事録](logs/2026-11-13_planetary-fixes-and-stepped-reducer.md))
+- [ ] 段付き遊星の高さ削減 (ボタンボルト、蓋と底板の薄型化) を反映する ([議事録](logs/2026-11-13_planetary-fixes-and-stepped-reducer.md))
