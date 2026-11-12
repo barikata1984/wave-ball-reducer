@@ -18,6 +18,7 @@ from planetary import (
     pose,
     print_pose,
     thin_walls,
+    wall_thicknesses,
 )
 from reducer import interference
 
@@ -119,6 +120,15 @@ def test_lewis():
 def test_min_wall():
     assert thin_walls(Params()) == {}
     assert "planet root to bearing seat" in thin_walls(Params(m=1.1))
+
+
+def test_hex_socket_clearance():
+    p = Params()
+    assert p.hex_clr >= 0.15
+    sock = (p.hex_af / 2 + p.hex_clr) / math.cos(math.pi / 6)
+    assert wall_thicknesses(p)["sun root to hex socket"] == pytest.approx(
+        p.r_root(p.zs, p.xs) - sock
+    )
 
 
 @pytest.mark.parametrize("k,psi", [(0, 0.0), (1, 0.9), (2, 2.3)])

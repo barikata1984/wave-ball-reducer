@@ -159,6 +159,7 @@ class Params:
     hex_hole_extra: float = 1.0
     screw_head_d: float = 5.5
     fit_clr: float = 0.05
+    hex_clr: float = 0.15  # per-side clearance, sun hex socket over adapter boss (sliding)
     slide_clr: float = 0.05
     min_wall: float = 1.2
     nozzle_d: float = 0.4
@@ -481,7 +482,7 @@ def lewis_stress(p: Params, torque_in: float) -> dict[str, float]:
 
 def wall_thicknesses(p: Params) -> dict[str, float]:
     D = BEARINGS[p.bearing][1]
-    hex_sock = (p.hex_af / 2 + p.fit_clr) / math.cos(math.pi / 6)
+    hex_sock = (p.hex_af / 2 + p.hex_clr) / math.cos(math.pi / 6)
     return {
         "sun root to hex socket": p.r_root(p.zs, p.xs) - hex_sock,
         "planet root to bearing seat": p.r_root(p.zp, p.xp) - (D / 2 + p.fit_clr),
@@ -580,7 +581,7 @@ def make_parts(p: Params) -> dict[str, Part]:
         p, outline(p, p.zs, half_thickness(p, p.zs, p.xs), p.r_tip_sun,
                    p.r_root(p.zs, p.xs)), p.r(p.zs), 1, z["g0"], z["gt"],
     )  # fmt: skip
-    parts["sun"] = sun - _hexagon(p.hex_af + 2 * p.fit_clr, z["g0"], p.hex_engage + p.gear_gap)
+    parts["sun"] = sun - _hexagon(p.hex_af + 2 * p.hex_clr, z["g0"], p.hex_engage + p.gear_gap)
 
     planet = herringbone(
         p, outline(p, p.zp, half_thickness(p, p.zp, p.xp), p.r_tip(p.zp, p.xp),
