@@ -160,3 +160,19 @@ def test_build_and_reload(home, tmp_path):
         elif name.endswith(".stl"):
             assert import_stl(str(f)).area > 0
     assert np.isfinite(import_step(str(files["assembly.step"])).volume)
+
+
+def test_wire_notch_in_floor(home):
+    """Motor cable exits straight down: radial notch through the floor, between stator holes."""
+    p, z, h = Params(), Params().zs_, home["housing"]
+    a = math.radians(p.stator_phase_deg + p.wire_notch_deg)
+    zf = (z["bottom"] + z["base_top"]) / 2
+    for r in (p.wire_notch_r0 + 1, 24.0, p.R_body - 0.5):  # open from r0 out through the wall
+        for off in (-p.wire_notch_w / 2 + 0.3, 0.0, p.wire_notch_w / 2 - 0.3):
+            pt = (r * math.cos(a) - off * math.sin(a), r * math.sin(a) + off * math.cos(a), zf)
+            assert not h.is_inside(pt), (r, off)
+    # floor still closed inside r0, and no slot through the tube wall at +X any more
+    assert h.is_inside(
+        ((p.wire_notch_r0 - 1) * math.cos(a), (p.wire_notch_r0 - 1) * math.sin(a), zf)
+    )
+    assert h.is_inside((p.R_motor_bore + 1, 0, z["base_top"] + 1))

@@ -54,6 +54,7 @@ from build123d import (
     Polyline,
     Pos,
     RegularPolygon,
+    Rot,
     Solid,
     Wire,
     export_step,
@@ -141,8 +142,10 @@ class Params:
     # 0: the drawing shows a full-diameter stator base under the bell (bell ends ~5 mm above it)
     base_boss_h: float = 0.0
     base_clamp: float = 3.5  # base under the stator screw heads (rest is counterbore)
-    wire_slot_w: float = 8.0
-    wire_slot_h: float = 4.0
+    # motor cable leaves the stator bottom straight down at ~24 mm, midway between PCD-30 holes
+    wire_notch_deg: float = 45.0  # relative to stator_phase_deg
+    wire_notch_r0: float = 19.0  # radial notch through the floor, from r0 out through the wall
+    wire_notch_w: float = 10.0
     bearing: str = "608ZZ"
     bearing_lip_t: float = 1.5
     bearing_shoulder: float = 1.0
@@ -495,6 +498,16 @@ def wall_thicknesses(p: Params) -> dict[str, float]:
         "base: centre hole to stator screw": p.stator_pcd / 2
         - p.m3_clear_d / 2
         - (p.shaft_od / 2 + 0.5),
+        # perpendicular distance from the notch centre line (lower bound on the true gap)
+        "base: wire notch to stator counterbore": p.stator_pcd
+        / 2
+        * math.sin(
+            math.radians(
+                min(p.wire_notch_deg % (360 / p.stator_n), -p.wire_notch_deg % (360 / p.stator_n))
+            )
+        )
+        - p.wire_notch_w / 2
+        - p.cbore_r,
         "hub around output holes": p.hub_r / 2 - p.m3_tap_d / 2,
         **(
             {
@@ -609,9 +622,12 @@ def make_parts(p: Params) -> dict[str, Part]:
         h -= Pos(p.R_s * math.cos(ph), p.R_s * math.sin(ph), 0) * _hexagon(
             p.screw_d, z["mid"] - hd, hd
         )
-    slot_l = p.R_body - p.R_motor_bore + 2  # motor wires out through the tube wall
-    h -= Pos(p.R_motor_bore - 1, -p.wire_slot_w / 2, z["base_top"]) * Box(
-        slot_l, p.wire_slot_w, p.wire_slot_h, align=MIN
+    # motor cable exits the stator bottom straight down: radial notch through the whole floor
+    nl = p.R_body - p.wire_notch_r0 + 1
+    h -= (
+        Rot(0, 0, p.stator_phase_deg + p.wire_notch_deg)
+        * Pos(p.wire_notch_r0, -p.wire_notch_w / 2, z["bottom"])
+        * Box(nl, p.wire_notch_w, stator_t, align=MIN)
     )
     parts["housing"] = h
 
