@@ -94,7 +94,11 @@ class Params:
     # in printed planetaries (Yoshida2023 p4-5)
     sigma_allow: float = 10.0
     input_rpm: float = 1000.0  # assumption, only enters Kv
-    # motor (iFlight product page); hole patterns are GBM5208H values -> MEASURE AND REPLACE
+    # motor: iFlight product page + RobotShop GM5208-24 drawing
+    # https://cdn.robotshop.com/media/i/ifl/rb-ifl-11/img/gm5208-24.webp
+    # rotor top: 12-M3 on PCD 25 (4), 30 (4), outer 4 at 45 deg; stator bottom: 15-M3 on PCD 25,
+    # 30, 44. Hollow shaft 20.5 long < body 23.2 -> no protrusion assumed. Phase angles read
+    # from the drawing (holes on the X/Y axes) -> check on the part.
     motor_d: float = 60.0  # envelope over the measured 59.3 (iFlight page: 59.5)
     motor_h: float = 23.25  # measured stator face to rotor top 23.2-23.3 (iFlight page: 31.2)
     shaft_od: float = 15.0
@@ -102,14 +106,21 @@ class Params:
     # hollow shaft turns with the rotor (checked by the user); protrusion not measured yet
     shaft_protrude_top: float = 0.0
     shaft_protrude_bottom: float = 0.0
-    rotor_n: int = 3
-    rotor_pcd: float = 17.0 / math.sin(math.pi / 3)  # "3 holes 17 mm" read as hole spacing
+    rotor_n: int = 4
+    rotor_pcd: float = 25.0  # alternative: 30.0
+    rotor_phase_deg: float = 0.0
     stator_n: int = 4
-    stator_pcd: float = 25.0 * math.sqrt(2)  # "4 holes 25 mm" read as adjacent spacing
-    motor_thread_depth: float = 3.0  # assumption: usable thread depth in rotor/stator holes
+    stator_pcd: float = 30.0  # alternatives: 25.0, 44.0 (7 holes, one missing at the connector)
+    stator_phase_deg: float = 0.0
+    # Section view of the RobotShop drawing, pixel estimate (4.70 px/mm from 23.2, 4.65 from
+    # 59.5; +-0.45 mm): rotor top = left face (bell end plate), plate and through holes
+    # 15 px = 3.2 mm; stator bottom = right face, full-diameter base, blind holes 15 px = 3.2 mm.
+    # Usable depth = 3.2 - 0.5 margin. Neither face has a protrusion.
+    rotor_thread_depth: float = 2.7
+    stator_thread_depth: float = 2.7
     motor_clr: float = 0.75  # radial, rotating bell to housing bore
     # layout
-    adapter_t: float = 3.0
+    adapter_t: float = 3.5  # M3x6 then engages 2.5 mm <= rotor_thread_depth
     head_h: float = 3.0  # M3 socket head height
     head_gap: float = 0.5
     hex_af: float = 7.0  # sun adapter boss across flats
@@ -127,8 +138,9 @@ class Params:
     lid_rib_w: float = 1.5
     lid_rib_h: float = 1.0
     base_t: float = 4.0
-    base_boss_h: float = 1.0  # stator rests on a boss so the bell clears the base
-    base_clamp: float = 3.0  # base under the stator screw heads (rest is counterbore)
+    # 0: the drawing shows a full-diameter stator base under the bell (bell ends ~5 mm above it)
+    base_boss_h: float = 0.0
+    base_clamp: float = 3.5  # base under the stator screw heads (rest is counterbore)
     wire_slot_w: float = 8.0
     wire_slot_h: float = 4.0
     bearing: str = "608ZZ"
@@ -255,9 +267,9 @@ class Params:
     def screw_len(self, clamp: float) -> int:
         return next(L for L in SCREW_LENGTHS if L >= clamp + self.screw_engage)
 
-    def motor_screw_len(self, clamp: float) -> int:
-        """Longest stock screw that does not go deeper than motor_thread_depth into the motor."""
-        return max(L for L in SCREW_LENGTHS if L <= clamp + self.motor_thread_depth)
+    def motor_screw_len(self, clamp: float, depth: float) -> int:
+        """Longest stock screw that does not go deeper than depth into the motor (0: none fits)."""
+        return max((L for L in SCREW_LENGTHS if L <= clamp + depth), default=0)
 
 
 # ---------------------------------------------------------------- gear geometry
@@ -438,8 +450,10 @@ def design_warnings(p: Params) -> list[str]:
                 w.append(f"Lewis: {gear} {s:.1f} MPa > {p.sigma_allow} at {T} N m")
     if p.shaft_protrude_top + p.fit_clr >= p.adapter_t:
         w.append("shaft protrudes through the sun adapter")
-    if p.motor_screw_len(p.adapter_t) - p.adapter_t < 2:
-        w.append("rotor screws engage < 2 mm")
+    for face, clamp, depth in (("rotor", p.adapter_t, p.rotor_thread_depth),
+                               ("stator", p.base_clamp, p.stator_thread_depth)):  # fmt: skip
+        if p.motor_screw_len(clamp, depth) - clamp < 2:
+            w.append(f"{face} screws engage < 2 mm (no stock length fits)")
     return w
 
 
@@ -543,7 +557,9 @@ def make_parts(p: Params) -> dict[str, Part]:
 
     adapter = Cylinder(p.adapter_r, p.adapter_t, align=MIN)
     adapter += _hexagon(p.hex_af, p.adapter_t, z["g0"] + p.hex_engage - p.adapter_t)
-    adapter -= _ring_holes(p.rotor_n, p.rotor_pcd / 2, p.m3_clear_d, 0, p.adapter_t, math.pi / 2)
+    adapter -= _ring_holes(
+        p.rotor_n, p.rotor_pcd / 2, p.m3_clear_d, 0, p.adapter_t, math.radians(p.rotor_phase_deg)
+    )
     if p.shaft_protrude_top > 0:  # shaft turns with the adapter: a close pocket is enough
         adapter -= Cylinder(p.shaft_od / 2 + p.fit_clr, p.shaft_protrude_top + p.fit_clr, align=MIN)
     parts["sun_adapter"] = adapter
@@ -576,15 +592,17 @@ def make_parts(p: Params) -> dict[str, Part]:
     h = Pos(0, 0, z["bottom"]) * Cylinder(p.R_body, z["mid"] - z["bottom"], align=MIN)
     h -= Pos(0, 0, z["base_top"]) * Cylinder(p.R_motor_bore, ring_lo - z["base_top"], align=MIN)
     boss_r = p.stator_pcd / 2 + p.screw_head_d / 2 + 1.1 * p.min_wall
-    h += Pos(0, 0, z["base_top"]) * Cylinder(boss_r, p.base_boss_h, align=MIN)
+    if p.base_boss_h > 0:
+        h += Pos(0, 0, z["base_top"]) * Cylinder(boss_r, p.base_boss_h, align=MIN)
     h -= ring_cutter(p, ring_lo, z["mid"])
     # through hole for the turning hollow shaft (0.5 mm radial clearance)
     h -= Pos(0, 0, z["bottom"]) * Cylinder(p.shaft_od / 2 + 0.5, p.base_t + p.base_boss_h,
                                            align=MIN)  # fmt: skip
     stator_t = p.base_t + p.base_boss_h
-    h -= _ring_holes(p.stator_n, p.stator_pcd / 2, p.m3_clear_d, z["bottom"], stator_t)
+    sph = math.radians(p.stator_phase_deg)
+    h -= _ring_holes(p.stator_n, p.stator_pcd / 2, p.m3_clear_d, z["bottom"], stator_t, sph)
     h -= _ring_holes(p.stator_n, p.stator_pcd / 2, 2 * p.cbore_r, z["bottom"],
-                     stator_t - p.base_clamp)  # fmt: skip
+                     stator_t - p.base_clamp, sph)  # fmt: skip
     hd = p.screw_len(p.ring_clamp) - p.ring_clamp + p.hex_hole_extra
     for k in range(p.n_ring_screws):
         ph = 2 * math.pi * (k + 0.5) / p.n_ring_screws
@@ -694,8 +712,8 @@ def summary(p: Params) -> str:
         ),
         (
             f"screws: ring M3x{p.screw_len(p.ring_clamp)} x{p.n_ring_screws}, rotor "
-            f"M3x{p.motor_screw_len(p.adapter_t)} x{p.rotor_n}, stator "
-            f"M3x{p.motor_screw_len(p.base_clamp)} x{p.stator_n}"
+            f"M3x{p.motor_screw_len(p.adapter_t, p.rotor_thread_depth)} x{p.rotor_n}, stator "
+            f"M3x{p.motor_screw_len(p.base_clamp, p.stator_thread_depth)} x{p.stator_n}"
         ),
     ]
     for T in (p.torque_cont, p.torque_peak):
