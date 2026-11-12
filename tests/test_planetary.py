@@ -1,9 +1,11 @@
+import ctypes
 import json
 import math
 
 import numpy as np
 import pytest
-from build123d import import_step, import_stl
+from build123d import Compound, import_step, import_stl
+from OCP.BRepExtrema import BRepExtrema_DistShapeShape
 
 from planetary import (
     BUILD_VOLUME,
@@ -21,13 +23,55 @@ from reducer import interference
 
 PRINTED = {"sun_adapter", "sun", "planet_0", "planet_1", "planet_2", "carrier_output",
            "housing", "ring_lid"}  # fmt: skip
-# BREP distance on helical solids takes ~45 s per pair: one planet per pose, a different one each
+# BREP distance on helical solids is slow: one planet per pose, a different one each
 GEAR_PAIRS = [("sun", "planet_{}"), ("housing", "planet_{}"), ("ring_lid", "planet_{}")]
+GAP_MAX = 0.3  # flank clearance upper bound [mm]
+MARGIN = 0.5  # face filter keeps everything within this of the partner's tip circle [mm]
+assert MARGIN > GAP_MAX  # so the filtered distance is exact whenever the test can pass
+
+
+def _faces(shape, c: complex, r: float, outside: bool = False) -> Compound:
+    """Faces whose XY bounding box reaches inside (or outside) radius r about point c."""
+    keep = []
+    for f in shape.faces():
+        bb = f.bounding_box()
+        xs, ys = (bb.min.X - c.real, bb.max.X - c.real), (bb.min.Y - c.imag, bb.max.Y - c.imag)
+        if outside:
+            ok = max(math.hypot(x, y) for x in xs for y in ys) > r
+        else:
+            dx = 0.0 if xs[0] <= 0 <= xs[1] else min(map(abs, xs))
+            dy = 0.0 if ys[0] <= 0 <= ys[1] else min(map(abs, ys))
+            ok = math.hypot(dx, dy) < r
+        if ok:
+            keep.append(f)
+    return Compound(keep)
+
+
+def gear_gap(p: Params, gear, planet, c: complex, ring: bool) -> float:
+    """BREP distance between a gear (sun or ring part) and a planet centred at c.
+
+    Only faces that can lie within MARGIN of the partner are kept, so the result equals
+    distance_to whenever that is below MARGIN; multithreading gives the rest of the speedup.
+    """
+    a = _faces(gear, c, p.r_tip(p.zp, p.xp) + MARGIN)
+    if ring:
+        b = _faces(planet, 0j, p.r_ring_tip - MARGIN, outside=True)
+    else:
+        b = _faces(planet, 0j, p.r_tip_sun + MARGIN)
+    d = BRepExtrema_DistShapeShape()
+    d.LoadS1(a.wrapped)
+    d.LoadS2(b.wrapped)
+    d.SetMultiThread(True)
+    d.Perform()
+    assert d.IsDone()
+    return d.Value()
 
 
 @pytest.fixture(scope="module")
 def home():
-    return make_parts(Params())
+    parts = make_parts(Params())
+    ctypes.CDLL("libc.so.6").malloc_trim(0)  # hand the GB-scale build transients back to the OS
+    return parts
 
 
 def test_tooth_conditions():
@@ -81,10 +125,19 @@ def test_min_wall():
 def test_no_interference_and_tooth_gap(home, k, psi):
     p = Params()
     parts = pose(p, home, psi)
-    assert interference(parts) == [], psi
+    fixed = {n for n, v in parts.items() if v is home[n]}  # checked once in test_fixed_parts
+    assert interference(parts, skip=fixed) == [], psi
+    c = planet_states(p, psi)[k][0]
     for a, b in GEAR_PAIRS:
-        gap = parts[a].distance_to(parts[b.format(k)])
-        assert 0 < gap < 0.3, (a, b, gap)  # meshing, flank clearance only
+        gap = gear_gap(p, parts[a], parts[b.format(k)], c, ring=a != "sun")
+        assert 0 < gap < GAP_MAX, (a, b, gap)  # meshing, flank clearance only
+
+
+def test_fixed_parts(home):
+    """Parts pose() never moves (housing, ring_lid, motor): pose-independent, so checked once."""
+    fixed = {n: v for n, v in home.items() if pose(Params(), home, 1.0)[n] is v}
+    assert {"housing", "ring_lid"} <= set(fixed)
+    assert interference(fixed) == []
 
 
 def test_print_pose_and_build_volume(home):
@@ -95,10 +148,10 @@ def test_print_pose_and_build_volume(home):
         assert bb.size.Z < BUILD_VOLUME[2]
 
 
-def test_build_and_reload(tmp_path):
+def test_build_and_reload(home, tmp_path):
     files = build(Params(), tmp_path)
     assert {f[:-4] for f in files if f.endswith(".stl") and "/" not in f} == PRINTED
-    assert len([f for f in files if f.startswith("assembled/")]) == len(make_parts(Params()))
+    assert len([f for f in files if f.startswith("assembled/")]) == len(home)
     assert set(json.loads(files["parts.json"].read_text())["printed"]) == PRINTED
     for name, f in files.items():
         assert f.stat().st_size > 0

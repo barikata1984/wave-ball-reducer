@@ -614,12 +614,19 @@ def print_pose(name: str, part: Part) -> Part:
     return Pos(-bb.center().X, -bb.center().Y, -bb.min.Z) * part
 
 
-def interference(parts: dict[str, Part], tol: float = 1e-3) -> list[tuple[str, str, float]]:
-    """Pairs whose common volume exceeds tol (mm^3); ball/groove contact is surface-only."""
+def interference(
+    parts: dict[str, Part], tol: float = 1e-3, skip: set[str] | frozenset[str] = frozenset()
+) -> list[tuple[str, str, float]]:
+    """Pairs whose common volume exceeds tol (mm^3); ball/groove contact is surface-only.
+
+    Pairs with both names in skip are not checked.
+    """
     names = list(parts)
     bad = []
     for i, a in enumerate(names):
         for b in names[i + 1 :]:
+            if a in skip and b in skip:
+                continue
             bba, bbb = parts[a].bounding_box(), parts[b].bounding_box()
             if bba.min.Z >= bbb.max.Z or bbb.min.Z >= bba.max.Z:
                 continue
