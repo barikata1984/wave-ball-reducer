@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 import pytest
-from build123d import Compound, import_step, import_stl
+from build123d import Compound, GeomType, import_step, import_stl
 from OCP.BRepExtrema import BRepExtrema_DistShapeShape
 
 from planetary import (
@@ -176,3 +176,18 @@ def test_wire_notch_in_floor(home):
         ((p.wire_notch_r0 - 1) * math.cos(a), (p.wire_notch_r0 - 1) * math.sin(a), zf)
     )
     assert h.is_inside((p.R_motor_bore + 1, 0, z["base_top"] + 1))
+
+
+@pytest.mark.parametrize("name", ["carrier_output", "ring_lid"])
+def test_lid_output_cone_prints_without_support(home, name):
+    """Hub-to-plate transition and lid bore meet on a 45 deg cone; flipped print pose has no
+    downward face flatter than 45 deg there."""
+    z = Params().zs_
+    part = home[name]
+    top = part.bounding_box().max.Z  # lies on the bed after the flip
+    region = [f for f in part.faces()
+              if f.bounding_box().min.Z > z["c1"] - 1e-6 and f.bounding_box().min.Z < top - 1e-6]  # fmt: skip
+    assert any(f.geom_type == GeomType.CONE for f in region)
+    for f in region:
+        nz = -f.normal_at().Z  # print pose = rotated 180 deg about X
+        assert nz >= -math.cos(math.radians(45)) - 1e-6, (f.geom_type, f.center())

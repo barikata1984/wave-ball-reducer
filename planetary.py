@@ -48,6 +48,7 @@ from build123d import (
     Axis,
     Box,
     Compound,
+    Cone,
     Cylinder,
     Location,
     Part,
@@ -131,13 +132,12 @@ class Params:
     carrier_t: float = 4.0
     carrier_wall: float = 2.0  # carrier plate beyond the pin shoulders
     carrier_rim_clr: float = 1.0
-    hub_step: float = 2.0  # carrier plate radius - hub radius (seat for the lid rib)
+    hub_step: float = 2.0  # carrier plate radius - hub radius, bridged by a 45 deg cone
     hub_stub: float = 3.0
     lid_t: float = 3.0
     lid_bore_clr: float = 0.05
     lid_axial_clr: float = 0.05
-    lid_rib_w: float = 1.5
-    lid_rib_h: float = 1.0
+    lid_rib_h: float = 1.0  # lid underside below the lid plate (over the carrier cavity)
     base_t: float = 4.0
     # 0: the drawing shows a full-diameter stator base under the bell (bell ends ~5 mm above it)
     base_boss_h: float = 0.0
@@ -490,7 +490,6 @@ def wall_thicknesses(p: Params) -> dict[str, float]:
         "body outside counterbore": p.R_body - p.R_s - p.cbore_r,
         "housing around motor": p.R_body - p.R_motor_bore,
         "carrier plate around pins": p.carrier_r - p.a - p.pin_r,
-        "lid rib": p.lid_rib_w,
         "lid": p.lid_t,
         "adapter around screw holes": p.adapter_r - p.rotor_pcd / 2 - p.m3_clear_d / 2,
         "adapter boss around rotor screw heads": p.rotor_pcd / 2 - p.screw_head_d / 2 - hex_sock,
@@ -590,7 +589,10 @@ def make_parts(p: Params) -> dict[str, Part]:
     planet -= Pos(0, 0, z["gt"] - B) * Cylinder(D / 2 + p.fit_clr, B, align=MIN)
     planet -= Pos(0, 0, z["g0"]) * Cylinder(D / 2 - p.bearing_shoulder, p.face_w, align=MIN)
     carrier = Pos(0, 0, z["c0"]) * Cylinder(p.carrier_r, p.carrier_t, align=MIN)
-    carrier += Pos(0, 0, z["c1"]) * Cylinder(p.hub_r, z["out"] - z["c1"], align=MIN)
+    # 45 deg cone from the plate to the hub: prints face down without support
+    carrier += Pos(0, 0, z["c1"]) * Cone(p.carrier_r, p.hub_r, p.hub_step, align=MIN)
+    zh = z["c1"] + p.hub_step
+    carrier += Pos(0, 0, zh) * Cylinder(p.hub_r, z["out"] - zh, align=MIN)
     carrier -= _ring_holes(p.n_out_holes, p.hub_r / 2, p.m3_tap_d, z["out"] - 8, 8)
     for k, (c, turn) in enumerate(planet_states(p, 0.0)):
         x, y = c.real, c.imag
@@ -637,12 +639,14 @@ def make_parts(p: Params) -> dict[str, Part]:
     rl -= ring_cutter(p, z["mid"], z_ledge)
     rl -= Pos(0, 0, z_ledge) * Cylinder(p.carrier_r + p.carrier_rim_clr, z["lid"] - z_ledge,
                                         align=MIN)  # fmt: skip
-    bore = p.hub_r + p.lid_bore_clr
-    rl += Pos(0, 0, z["lid"] - p.lid_rib_h) * (
-        Cylinder(bore + p.lid_rib_w, p.lid_rib_h, align=MIN)
-        - Cylinder(bore, p.lid_rib_h, align=MIN)
-    )
-    rl -= Pos(0, 0, z["lid"]) * Cylinder(bore, p.lid_t, align=MIN)
+    # lid underside spans the cavity; bore + 45 deg cone parallel to the hub, lid_bore_clr normal
+    rl += Pos(0, 0, z["lid"] - p.lid_rib_h) * Cylinder(p.carrier_r + p.carrier_rim_clr,
+                                                      p.lid_rib_h, align=MIN)  # fmt: skip
+    g = p.lid_bore_clr
+    bore = p.hub_r + g
+    rl -= Pos(0, 0, z["c1"]) * Cone(p.carrier_r + g * math.sqrt(2), bore,
+                                    p.hub_step + g * (math.sqrt(2) - 1), align=MIN)  # fmt: skip
+    rl -= Pos(0, 0, z["c1"]) * Cylinder(bore, z["top"] - z["c1"], align=MIN)
     ph0 = math.pi / p.n_ring_screws
     rl -= _ring_holes(p.n_ring_screws, p.R_s, p.m3_clear_d, z["mid"], z["top"] - z["mid"], ph0)
     zc = z["mid"] + p.ring_clamp
