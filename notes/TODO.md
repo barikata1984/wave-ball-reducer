@@ -19,3 +19,4 @@
 - [ ] ふたのねじ (すきま 0.3mm)、ラチェットの爪、ハウジング上下の中心出し (すきま 0.05mm) を部分の試し刷りで確かめる ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
 - [ ] 685ZZ の内輪が段付きボルトの直径 5mm 部の上を軸方向に滑れるかを確かめる ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
 - [ ] 干渉・すきまの判定を B-rep からメッシュ (manifold3d、Coal) に替えてテストを速くするか決める ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
+- [ ] 直径 5mm 部が 31〜32mm の段付きボルトが市販されているか確かめる (あれば、つなぎ輪があってもキャリアの穴を 8mm に保てる) ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
