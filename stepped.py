@@ -2,44 +2,45 @@
 
 Each planet is one print with two gears on a common axis: the large gear meshes with the sun
 (herringbone, module m1), the small gear meshes with the fixed ring (spur, module m2).
-Ring fixed, sun input, carrier output: ratio = 1 + zr*z1 / (zs*z2).
+Ring fixed, sun input, carrier output: ratio = 1 + zr*z1 / (zs*z2) = 1 + 54*26/(12*13) = 10.
 
 Axis = Z, z = 0 on the motor rotor's top face. Stack from -Z to +Z:
-  base (screwed to the stator from below) | motor in housing_lower (tube) | sun adapter (on the
-  rotor) | housing_upper: lip (floor under the planets), ring teeth around the small gears and
-  the sun shaft, large gears + sun teeth inside a thin shell | carrier (output) | lid.
+  base (screwed to the stator from below) | motor in housing_lower (tube, topped by the lip:
+  the floor under the planets) | sun adapter (on the rotor) | housing_upper: ring teeth around
+  the small gears and the sun shaft, large gears + sun teeth inside a thin shell with the external cap thread on
+  its top band | carrier (output) with 3 printed pins | screw-on cap (lid).
 
-The housing is split at the lip underside so that face is the upper's bed face (no support)
-and the upper (gears, thread) can be reprinted alone. A spigot ring on the tube top centres it
-(radial slide_clr); 4 M3 cap screws, put in from the ring-top face through counterbores outside
-the ring root, hold it axially and against the ring reaction torque (screw shear + friction).
-A screw-on joint would loosen under the reversing ring torque.
+Sizes are geometric lower bounds ("assembles, turns without interference, prints"), not stress
+limits: size_stepped() lists them and their slack. Lewis stress, pin bending and pressures are
+reference values only (reference_loads), never pass/fail.
 
-Why this layout: the large gears' swing circle (a + large tip + 0.5) is wider than the ring, so
-they sit ABOVE the ring and the cluster (sun + planets + carrier) is lowered into the housing
-with the small gears entering the one-piece spur ring. No screw passes beside the large gears;
-the shell there is min_wall + 0.8 thick. The lid screws in (internal thread, pitch 2, 45 deg
-flanks, cut 0.8 into the shell) because any axial screw would need a boss inside the swing
-circle; it stops on the housing top face and a printed ratchet arm keeps it from unscrewing.
-The motor (d 60) cannot pass the ring bore (tip d 59.2), so the base is a separate plate and
-the housing slides over the motor from above.
+Planet support: one 608ZZ per planet, pressed into the large gear's top end; the carrier's
+printed Ø8 pin goes through its inner race and on down through a plain bore in the small gear
+(a printed journal, radial clearance journal_clr). pin_kind="m8_bolt" swaps the printed pins
+for M8 low-head bolts screwed into the carrier from the output face.
+
+The housing is split at the ring teeth's bottom face (ring_lo = lip top). Both split faces are
+bed faces (housing_upper prints upright, housing_lower upside down on its lip top), so the
+spigot is a loose printed ring (spigot_ring) sitting half in a groove in each face, outside the
+joint screw circle. 4 M3 cap screws, put in from the ring-top face through the ring band
+outside the ring teeth, join the halves. The
+lid is a cap screwed onto an external thread (pitch 2, 45 deg flanks, bd_warehouse) on the
+housing's top band; it stops on the housing top face and a printed ratchet arm in its plate
+keeps it from unscrewing. The motor (d 60) cannot pass the ring bore, so the base is separate.
 
 Assembly order:
   1 screw sun_adapter to the rotor; 2 screw base to the stator (cable through the floor notch);
   3 lower housing_lower over motor + adapter, screw it to the base from below (4 M3x12);
-    put housing_upper on its spigot, screw it down from inside (4 M3x12 through the counterbores
-    in the ring-top face; the large gears are not in yet);
-  4 press 685ZZ into both ends of each planet; mesh the 3 planets radially around the sun
-    (herringbone cannot slide axially), phase marks outward; put the carrier on top, thread
-    the 3 Ø5 shoulder bolts through the pin_link (heads below it), push bolts + link up through
-    both bearings into the carrier and screw each M4 end into the tapped hole above the socket
-    (hex key from below, the link sits on the head tops) (dowel alternative: pins pressed into
-    the carrier first, no link);
+    drop spigot_ring into its groove, put housing_upper on it, screw it down from inside (4 M3x12
+    through the counterbores in the ring-top face; the large gears are not in yet);
+  4 press a 608ZZ into the large-gear end of each planet; mesh the 3 planets radially around the
+    sun (herringbone cannot slide axially), phase marks outward; lower the carrier so its 3 pins
+    go through the inner races and the small-gear bores;
   5 lower this cluster: the small gears slide into the ring (turn the cluster < 1 ring pitch to
     find the mesh), the sun's hex socket slides onto the adapter hex and the sun's bottom face
-    rests on the adapter's round seat, which carries sun + planets (turn the rotor by hand);
-  6 screw the lid in (clockwise from above) until it seats on the housing top; the arm's tooth
-    clicks over the notches and blocks unscrewing. To open, lift the arm end through its slot.
+    rests on the adapter's round seat (turn the rotor by hand);
+  6 screw the cap on (clockwise from above) until its plate seats on the housing top; the
+    arm's tooth clicks over the notches and blocks unscrewing. To open, lift the arm end.
 
 Gear formulas (KHK Gear Technical Reference, internal gear interference) and the tooth search
 are from the design study (scratchpad stepped.py); the 3-planet assembly condition
@@ -62,57 +63,56 @@ from build123d import (
     Cone,
     Cylinder,
     Face,
-    Helix,
+    GeomType,
     Location,
     Part,
     Polyline,
     Pos,
-    RegularPolygon,
     Rot,
     Solid,
     Wire,
     export_step,
     export_stl,
     extrude,
-    revolve,
-    sweep,
 )
 
+import components as cp
 import planetary as pl
-from planetary import _hexagon, half_thickness, herringbone, inv, outline, ring_half_space
-from reducer import BEARINGS, MIN, SCREW_LENGTHS, _ring_holes
+from planetary import half_thickness, herringbone, inv, outline, ring_half_space
+from reducer import BEARINGS, MIN, SCREW_LENGTHS
+
+M8_LENGTHS = (16, 20, 25, 30, 35, 40)  # stock M8 low-head socket screws (DIN 7984) [mm]
 
 
 @dataclass
 class Params:
     # gears: sun / planet large (mesh 1, module m1) and planet small / ring (mesh 2, module m2)
-    zs: int = 15
-    z1: int = 35
-    z2: int = 14
+    zs: int = 12
+    z1: int = 26
+    z2: int = 13
     zr: int = 54
     n_planets: int = 3
-    m1: float = 0.9
-    m2: float = 1.1
+    m1: float = 1.1
+    m2: float = 1.02
     alpha_deg: float = 20.0
     helix_deg: float = 20.0  # sun-large herringbone, as planetary.py
-    xs: float = 0.13  # smallest shift against undercut for z = 15
-    x1: float = -0.13  # xs + x1 = 0: standard centre distance a = m1 (zs + z1) / 2
-    # 0.4 (study: 0.2) keeps 1.2 mm between the small root and the 685 seat; the tip is then
-    # trimmed by small_tip_trim to keep the tip land >= tip_min. xr follows from coaxiality.
-    x2: float = 0.4
-    b1: float = 7.5  # sun-large face width (herringbone total), Lewis <= 10 MPa at 0.4 N m
-    b2: float = 13.5  # small-ring face width
+    xs: float = 0.3  # z = 12 needs >= 0.30 against undercut
+    x1: float = -0.3  # xs + x1 = 0: standard centre distance a = m1 (zs + z1) / 2 = 20.9
+    x2: float = 0.4  # xr follows from coaxiality at a (about +0.39)
+    # sun-large: 608 width 7 + seat cone (bearing_shoulder + fit_clr) + min_wall floor joining
+    # the large gear to the small one under the cone
+    b1: float = 9.25
+    b2: float = 8.0  # small-ring: journal on the pin, length = pin diameter
     sun_tip_trim: float = 0.1
     small_tip_trim: float = 0.15
     flank_clr: float = 0.05
     fillet_m: float = 0.38
-    ring_fillet_m: float = 0.3  # 0.38 makes the two root fillets of the narrow ring space cross
+    ring_fillet_m: float = 0.3
     pts_per_flank: int = 8
     tip_min: float = 0.45
-    # strength (Lewis, Kv = 1, ring form factor of a rack 0.154: both conservative)
+    # reference loads only (Lewis, Kv = 1, ring form factor of a rack 0.154)
     torque_cont: float = 0.25
     torque_peak: float = 0.4
-    sigma_allow: float = 10.0
     # motor GM5208-24 (see planetary.py for sources)
     motor_d: float = 60.0
     motor_h: float = 23.25
@@ -128,7 +128,7 @@ class Params:
     stator_thread_depth: float = 2.7
     motor_clr: float = 0.75
     motor_top_clr: float = 0.5  # rotor top to the housing lip
-    # layout
+    # sun drive
     adapter_t: float = 3.3  # M3x6 into the rotor: 6 - 3.3 = 2.7 = rotor thread depth
     head_h: float = 1.3  # ESCO ultra-low socket head M3 (head d assumed 5.5 = screw_head_d)
     head_gap: float = 0.5
@@ -138,94 +138,86 @@ class Params:
     hex_chamfer: float = 0.4  # 45 deg at the sun socket mouth (first layer squish)
     sun_seat_r: float = 8.5  # adapter seat under the sun's bottom face (s0); hex only drives
     sun_shaft_r: float = 9.0
-    gear_gap: float = 0.5  # small gear to lip, ring top to large gear, large gear to lid band
+    gear_gap: float = 0.5  # small gear to lip, ring top to large gear
     sweep_clr: float = 0.5  # large tip circle to the shell bore
-    shell_margin: float = 0.8  # shell = min_wall + shell_margin
+    # planet support: 608ZZ in the large gear, printed pin (or M8 bolt) from the carrier
+    bearing: str = "608ZZ"
+    bearing_shoulder: float = 1.0  # outer race rests on the seat cone this far inside D/2
+    inner_land_d: float = 12.0  # 608 inner-race face OD (assumed; catalogue d1 ~ 12)
+    pin_kind: str = "printed"  # or "m8_bolt"
+    pin_fit_clr: float = 0.05  # pin radius d/2 - this: slip fit in the inner race
+    # small-gear bore on the pin: printed hole on a printed pin, both ~0.1 off nominal; 0.05
+    # (slide_clr) is for short locating fits, a 8 mm long running fit that must turn freely
+    # needs about 0.2-0.3. 0.25 -> bore d 8.4 on a d 7.9 pin.
+    journal_clr: float = 0.25
+    pin_chamfer: float = 0.5
+    seat_d: float = 10.5  # carrier collar on the inner race (inside inner_land_d)
+    seat_gap: float = 0.25  # collar to the inner race; the sun sits on the adapter seat
+    bolt_head_d: float = 13.0  # M8 DIN 7984
+    bolt_head_h: float = 5.0
+    bolt_tap_d: float = 6.8  # the bolt cuts its thread in the printed carrier
+    # carrier and lid
     carrier_gap: float = 1.0
-    carrier_t: float = 8.0
+    carrier_t: float = 4.0  # >= output hole depth 8 - (out - c1) + min_wall
     carrier_wall: float = 2.0
     carrier_rim_clr: float = 1.0
     hub_step: float = 2.0
     hub_stub: float = 3.0
+    n_out_holes: int = 4
+    out_hole_depth: float = 8.0
+    out_phase_deg: float = 45.0  # m8_bolt: use 3 holes at 60 deg, between the bolt heads
     lid_t: float = 2.7
     lid_bore_clr: float = 0.05
     lid_axial_clr: float = 0.05
     lid_rib_h: float = 1.0
     base_t: float = 3.3
-    # housing split at the lip underside (z = motor_top_clr): upper = lip + ring + shell (its
-    # bed face is the lip underside, no support), lower = motor tube. Spigot ring on the lower
-    # top in a groove under the upper; centred on the groove's outer wall (radial slide_clr).
+    flush_cap: bool = True  # body OD = cap OD (cap flush with the body below the thread)
+    # housing split at the ring bottom (lip top); loose spigot ring outside the joint screws,
+    # spigot_h deep in each half, centred on the grooves' outer walls
     spigot_w: float = 1.6
     spigot_h: float = 1.5
-    spigot_in_clr: float = 0.3  # inner wall: no contact, only the outer wall centres
-    # joint: M3 cap screws down from the ring-top face (counterbores outside the ring root,
-    # inside R_sweep: holes, no boss) through the upper's bottom slab into hex holes in the tube
+    spigot_in_clr: float = 0.3
     n_joint: int = 4
-    joint_r: float = 36.4  # counterbore 1.55 from the ring root, 0.33 inside R_sweep
     joint_phase_deg: float = 45.0  # between the base screws
     joint_clamp: float = 4.0
     base_clamp: float = 3.3  # = base_t: no counterbore, M3x6 still engages the stator 2.7
     wire_notch_deg: float = 45.0
     wire_notch_r0: float = 19.0
     wire_notch_w: float = 10.0
-    # planet support: 2 x 685ZZ per planet on a Ø5 shank whose top end sits in a carrier socket.
-    # "shoulder_bolt": Ø5 x pin_len shoulder (ISO 7379 style, d1 5 -> M4), head pin_head_gap
-    # under the small bearing's inner race, M4 end screwed into a hole tapped in the carrier above the socket.
-    # "dowel": Ø5 x pin_len steel pin pressed into the same socket (head and thread unused).
-    bearing: str = "685ZZ"
-    bearing_shoulder: float = 1.0
-    pin_kind: str = "shoulder_bolt"
-    pin_len: float = 30.0  # shoulder (or dowel) length, s0 .. socket bottom
-    pin_head_d: float = 8.0  # socket head of a Ø5/M4 shoulder bolt (vendor tables: 8-9)
-    pin_head_h: float = 3.0  # AliExpress d5/M4 shoulder bolts: head 3 mm
-    pin_head_gap: float = 0.5  # link top to the small bearing: link and head touch nothing turning
-    # pin link: flat printed ring on the three bolt heads (hung on them, Ø5 holes on the shoulders)
-    # joining the free bolt ends; it turns with the carrier. Carries the radial load share only.
-    link_t: float = 1.2  # = min_wall; adds link_t to the height and takes it off the socket
-    link_w: float = 10.0  # radial, centred on a: covers Ø9 heads, 0.9 off the adapter
-    seat_d: float = 6.0  # carrier seat on the large inner race (685 inner-race face <= 6.2)
-    seat_gap: float = 0.25  # seat to the large inner race; the sun sits on the adapter seat
-    pin_thread_len: float = 5.0  # vendor tables: 4.5-5
-    pin_tap_d: float = 3.3  # M4 tap drill; tapped in the print
-    pin_socket_d: float = 5.0  # dowel: printed holes come out undersize -> press fit; tune
-    pin_socket_min: float = 6.8  # 8 before the pin link (bolt length 30 stays); see README
-    # screw-on lid: internal thread cut 0.8 into the shell (= shell_margin, min_wall stays behind
-    # it), 45 deg flanks (90 deg included) print without support; the lid stops on the housing top
+    # cap thread on the housing top band: pitch 2, 45 deg flanks (90 deg included) print without
+    # support, crest/root flats 0.2. thread_clr radial on both diameters: flank normal gap
+    # 0.3 sin 45 = 0.21, FDM threads need ~0.2-0.4 (slide_clr 0.05 is for short smooth bores).
     thread_pitch: float = 2.0
-    thread_depth: float = 0.8  # 45 deg flanks: crest and root flats P/2 - depth = 0.2
-    # radial, both diameters; flank normal gap 0.3 sin 45 = 0.21. FDM threads need ~0.2-0.4
-    # (slide_clr 0.05 is for short smooth bores, hex_clr 0.15 for a prism fit).
+    thread_depth: float = 0.8
     thread_clr: float = 0.3
-    thread_turns: int = 3  # lid thread length = turns * pitch; housing groove one turn longer
-    # ratchet lock: printed arm in the lid rim, its tooth drops into notches in the housing top
+    thread_turns: int = 3  # cap thread length (turns + 0.5) pitch; housing ridge one turn longer
+    # ratchet lock: arm in the cap plate rim, its tooth drops into notches in the housing top
     arm_deg: float = 40.0
-    arm_w: float = 4.0  # radial, inward from R_body
+    arm_w: float = 4.0
     arm_slot: float = 0.8
     arm_at_deg: float = 70.0  # free end of the arm (root at arm_at_deg + arm_deg)
     tooth_h: float = 0.6
-    tooth_flat: float = 1.0  # vertical face (+theta, blocks loosening), flat, 45 deg ramp
-    notch_play: float = 0.4  # each side of the tooth in its notch
-    # 40 notches = 9 deg; thread_clr / pitch * 360 = 54 deg = 6 notches: the flank-loaded seat
-    # angle also lands in a notch. Back-off to the next notch <= 2 * 9/360 = 0.05 mm.
+    tooth_flat: float = 1.0
+    notch_play: float = 0.4
+    # 40 notches = 9 deg; thread_clr / pitch * 360 = 54 deg = 6 notches
     n_notches: int = 40
-    n_grip: int = 48  # vertical grooves on the lid rim
+    n_grip: int = 48  # vertical grooves on the cap plate rim
     grip_w: float = 1.2
     grip_d: float = 0.6
     # fasteners and FDM
     n_base_screws: int = 4
-    base_screw_r: float = 36.0
-    n_out_holes: int = 4
     m3_clear_d: float = 3.4
     m3_tap_d: float = 2.5
     screw_d: float = 3.0
     screw_engage: float = 6.0
     hex_hole_extra: float = 1.0
     screw_head_d: float = 5.5
+    joint_head_h: float = 3.0  # ISO 4762 M3 socket head
     fit_clr: float = 0.05
     slide_clr: float = 0.05
     min_wall: float = 1.2
 
-    # --- derived ---
+    # --- derived: gears ---
     @property
     def alpha(self) -> float:
         return math.radians(self.alpha_deg)
@@ -282,16 +274,79 @@ class Params:
         return self.m2 * (self.zr / 2 + 1.25 + self.xr)
 
     @property
-    def R_sweep(self) -> float:  # shell bore around the large gears
+    def R_sweep(self) -> float:  # large-gear swing circle + sweep_clr
         return self.a + self.r_tip1 + self.sweep_clr
 
+    # --- derived: planet support ---
     @property
-    def R_body(self) -> float:
-        return max(self.R_sweep + self.min_wall + self.shell_margin, self.R_motor_bore + 2.0)
+    def pin_r(self) -> float:
+        return BEARINGS[self.bearing][0] / 2 - self.pin_fit_clr
 
+    @property
+    def journal_r(self) -> float:  # small-gear bore
+        return self.pin_r + self.journal_clr
+
+    @property
+    def seat_r(self) -> float:  # 608 seat in the large gear
+        return BEARINGS[self.bearing][1] / 2 + self.fit_clr
+
+    # --- derived: housing radii (each the smallest value its constraints allow) ---
     @property
     def R_motor_bore(self) -> float:
         return self.motor_d / 2 + self.motor_clr
+
+    @property
+    def hex_circ(self) -> float:  # circumradius of an M3 hex hole
+        return self.screw_d / 2 / math.cos(math.pi / 6)
+
+    @property
+    def cbore_r(self) -> float:
+        return self.screw_head_d / 2 + self.slide_clr
+
+    @property
+    def joint_r(self) -> float:
+        """Joint screws: counterbore min_wall outside the ring root, hex hole outside the motor."""
+        return max(self.r_ring_root + self.min_wall + self.cbore_r,
+                   self.R_motor_bore + self.min_wall + self.hex_circ)  # fmt: skip
+
+    @property
+    def R_shell(self) -> float:
+        """Shell bore above the ring: the large-gear swing and the joint counterbore columns."""
+        return max(self.R_sweep, self.joint_r + self.cbore_r)
+
+    @property
+    def R_thread_root(self) -> float:  # min_wall behind the external thread
+        return self.R_shell + self.min_wall
+
+    @property
+    def R_crest(self) -> float:
+        return self.R_thread_root + self.thread_depth
+
+    @property
+    def R_body(self) -> float:
+        r = max(self.R_crest, self.joint_r + self.cbore_r + self.min_wall,
+                self.joint_r + self.hex_circ + self.min_wall, self.R_motor_bore + 2.0,
+                self.spigot_r[1] + self.slide_clr + self.min_wall)  # fmt: skip
+        return max(r, self.R_cap) if self.flush_cap else r
+
+    @property
+    def R_cap(self) -> float:
+        return cp.cap_outer_r(self.R_thread_root, self.thread_depth, self.thread_clr,
+                              self.min_wall)  # fmt: skip
+
+    @property
+    def base_screw_r(self) -> float:
+        """Midway between the motor-bore bound and the outside bound of the base screw holes."""
+        lo = self.R_motor_bore + self.min_wall + self.hex_circ
+        hi = self.R_body - self.min_wall - max(self.hex_circ, self.cbore_r)
+        return (lo + hi) / 2
+
+    @property
+    def spigot_r(self) -> tuple[float, float]:
+        """(inner, outer) radius of the spigot ring: groove min_wall outside the joint holes."""
+        r0 = (self.joint_r + max(self.m3_clear_d / 2, self.hex_circ) + self.min_wall
+              + self.spigot_in_clr)  # fmt: skip
+        return r0, r0 + self.spigot_w
 
     @property
     def adapter_r(self) -> float:
@@ -306,20 +361,15 @@ class Params:
         return (self.hex_af / 2 + self.hex_clr) / math.cos(math.pi / 6)
 
     @property
-    def hex_circ(self) -> float:
-        return self.screw_d / 2 / math.cos(math.pi / 6)
-
-    @property
-    def cbore_r(self) -> float:
-        return self.screw_head_d / 2 + self.slide_clr
-
-    @property
-    def shoulder_r(self) -> float:
-        return self.seat_d / 2
+    def bolt_cbore_r(self) -> float:
+        return self.bolt_head_d / 2 + self.slide_clr
 
     @property
     def carrier_r(self) -> float:
-        return self.a + self.shoulder_r + self.carrier_wall
+        r = self.seat_d / 2 + self.carrier_wall
+        if self.pin_kind == "m8_bolt":  # bolt-head counterbore inside the hub
+            r = max(r, self.bolt_cbore_r + self.min_wall + self.hub_step)
+        return self.a + r
 
     @property
     def hub_r(self) -> float:
@@ -332,10 +382,10 @@ class Params:
     @property
     def zs_(self) -> dict[str, float]:
         """Key heights: s0/s1 small gear (ring teeth ring_lo..s1), L0/L1 large gear."""
-        # sun side: adapter + rotor screw heads; planet side: lip + bolt heads under the planets
-        s0 = max(self.adapter_t + self.head_h + self.head_gap,
-                 self.motor_top_clr + self.min_wall + self.gear_gap + self.pin_head_h
-                 + self.link_t + self.pin_head_gap)  # fmt: skip
+        s0 = max(
+            self.adapter_t + self.head_h + self.head_gap,  # sun on the adapter
+            self.motor_top_clr + self.min_wall + self.gear_gap,
+        )  # planets over the lip
         s1 = s0 + self.b2
         L0 = s1 + self.gear_gap
         L1 = L0 + self.b1
@@ -344,43 +394,26 @@ class Params:
         lid = c1 + self.lid_axial_clr + self.lid_rib_h
         base_top = -self.motor_h
         return {"s0": s0, "ring_lo": s0 - self.gear_gap, "s1": s1, "L0": L0, "L1": L1,
-                "Lmid": (L0 + L1) / 2, "band": L1 + self.gear_gap, "c0": c0, "c1": c1,
-                "lid": lid, "top": lid + self.lid_t, "out": lid + self.lid_t + self.hub_stub,
+                "Lmid": (L0 + L1) / 2, "c0": c0, "c1": c1, "lid": lid, "top": lid + self.lid_t,
+                "out": lid + self.lid_t + self.hub_stub,
+                "thread0": lid - (self.thread_turns + 1) * self.thread_pitch,
                 "base_top": base_top, "bottom": base_top - self.base_t,
-                "split": self.motor_top_clr,
-                "joint_seat": self.motor_top_clr + self.joint_clamp}  # fmt: skip
+                "split": s0 - self.gear_gap,
+                "joint_seat": s0 - self.gear_gap + self.joint_clamp}  # fmt: skip
 
     @property
     def height(self) -> float:
         return self.zs_["out"] - self.zs_["bottom"]
 
     @property
-    def thread_hw(self) -> float:
-        """Half width of the thread groove at the bore (45 deg flanks, equal crest/root flats)."""
-        return (self.thread_pitch / 2 + self.thread_depth) / 2
+    def lip_top(self) -> float:  # housing lip under the small gears
+        return self.zs_["s0"] - self.gear_gap
 
     @property
-    def lip_top(self) -> float:  # under the shoulder-bolt heads, gear_gap below them
-        return self.head_top - self.pin_head_h - self.gear_gap
-
-    @property
-    def head_top(self) -> float:  # shoulder-bolt head top = pin link underside
-        return self.zs_["s0"] - self.pin_head_gap - self.link_t
-
-    @property
-    def link_r(self) -> tuple[float, float]:
-        return self.a - self.link_w / 2, self.a + self.link_w / 2
-
-    @property
-    def pin_socket(self) -> float:
-        """Pin from the head top (under the link) up into the carrier; depth from the boss bottom."""
-        return self.pin_len - (self.zs_["L1"] - self.head_top)
-
-    @property
-    def spigot_r(self) -> tuple[float, float]:
-        """(inner, outer) radius of the spigot ring; the groove is ring-tip + min_wall outward."""
-        r0 = self.r_ring_tip + self.min_wall + self.spigot_in_clr
-        return r0, r0 + self.spigot_w
+    def bolt_len(self) -> int:
+        """Longest stock M8 that ends at or above s0 (m8_bolt variant)."""
+        need = self.zs_["out"] - self.bolt_head_h - self.zs_["s0"]
+        return max(L for L in M8_LENGTHS if L <= need)
 
     def screw_len(self, clamp: float) -> int:
         return next(L for L in SCREW_LENGTHS if L >= clamp + self.screw_engage)
@@ -428,7 +461,7 @@ def planet_tip_gap(p: Params) -> float:
 
 
 def lewis_stress(p: Params, torque_in: float) -> dict[str, float]:
-    """Lewis root stress [MPa], Kv = 1. Ring side Ft2 = Ft1 r1/r2 (planet moment balance)."""
+    """Lewis root stress [MPa], Kv = 1 (reference only). Ring side Ft2 = Ft1 r1/r2."""
     ft1 = torque_in / (p.m1 * p.zs / 2e3) / p.n_planets
     ft2 = ft1 * (p.m1 * p.z1) / (p.m2 * p.z2)
 
@@ -441,8 +474,36 @@ def lewis_stress(p: Params, torque_in: float) -> dict[str, float]:
             "ring": ft2 / (p.b2 * 0.154 * math.pi * p.m2)}  # fmt: skip
 
 
+def reference_loads(p: Params, torque_in: float) -> dict[str, float]:
+    """Rough planet-support loads at input torque_in [N m] (reference values, not checks).
+
+    Per planet the sun force Ft1 acts at the large gear's mid-plane and the ring force Ft2 at
+    the small gear's; both push the planet the same way (their sum drives the carrier). The
+    planet rests on the 608 (centre zb) and the journal (centre zj = small mid-plane): moment
+    balance about zj gives the 608 load Rb, the rest Rj goes through the journal. The pin is a
+    cantilever from the carrier underside c0 (collar ignored): M = Rb (c0 - zb) + Rj (c0 - zj).
+    Pressures are projected (load / (d x length)).
+    """
+    z = p.zs_
+    B = BEARINGS[p.bearing][2]
+    d = 2 * p.pin_r
+    ft1 = torque_in / (p.m1 * p.zs / 2e3) / p.n_planets
+    ft2 = ft1 * (p.m1 * p.z1) / (p.m2 * p.z2)
+    zb, zj = z["L1"] - B / 2, (z["s0"] + z["s1"]) / 2
+    rb = ft1 * (z["Lmid"] - zj) / (zb - zj)
+    rj = ft1 + ft2 - rb
+    m = rb * (z["c0"] - zb) + rj * (z["c0"] - zj)
+    return {"Ft1 [N]": ft1, "Ft2 [N]": ft2, "608 load [N]": rb, "journal load [N]": rj,
+            "pin root moment [N mm]": m, "pin bending [MPa]": 32 * m / (math.pi * d**3),
+            "journal pressure [MPa]": rj / (d * p.b2),
+            "carrier pin-root pressure [MPa]": (ft1 + ft2) / (d * p.carrier_t)}  # fmt: skip
+
+
 def design_warnings(p: Params) -> list[str]:
+    """Geometric problems only (stress is reported by reference_loads, never checked)."""
     w = []
+    z = p.zs_
+    B = BEARINGS[p.bearing][2]
     if (p.zs * p.z2 + p.zr * p.z1) % p.n_planets:
         w.append("assembly: (zs z2 + zr z1)/N not integer")
     if abs(p.xs + p.x1) > 1e-9:
@@ -451,111 +512,149 @@ def design_warnings(p: Params) -> list[str]:
         w.append(f"ring mesh working pressure angle {math.degrees(p.aw2):.1f} deg out of range")
     if planet_tip_gap(p) < p.min_wall:
         w.append(f"planet tips {planet_tip_gap(p):.2f} mm apart")
-    for name, m, z, x, ra in (("sun", p.m1, p.zs, p.xs, p.r_tip_sun),
-                              ("planet_large", p.m1, p.z1, p.x1, p.r_tip1),
-                              ("planet_small", p.m2, p.z2, p.x2, p.r_tip2)):  # fmt: skip
-        if x < xmin(p, z) - 1e-9:
-            w.append(f"undercut: {name} z={z} x={x}")
-        if tip_land(p, m, z, x, ra) < p.tip_min:
-            w.append(f"{name} tip land {tip_land(p, m, z, x, ra):.2f} < {p.tip_min}")
+    for name, m, zz, x, ra in (("sun", p.m1, p.zs, p.xs, p.r_tip_sun),
+                               ("planet_large", p.m1, p.z1, p.x1, p.r_tip1),
+                               ("planet_small", p.m2, p.z2, p.x2, p.r_tip2)):  # fmt: skip
+        if x < xmin(p, zz) - 1e-9:
+            w.append(f"undercut: {name} z={zz} x={x}")
+        if tip_land(p, m, zz, x, ra) < p.tip_min:
+            w.append(f"{name} tip land {tip_land(p, m, zz, x, ra):.2f} < {p.tip_min}")
     if ring_tip_land(p) < p.tip_min:
         w.append(f"ring tip land {ring_tip_land(p):.2f} < {p.tip_min}")
     if p.r_ring_tip <= p.m2 * p.zr / 2 * math.cos(p.alpha):
         w.append("ring tip inside its base circle")
     w += [f"internal {k} interference" for k, v in internal_interference(p).items() if v]
-    for T in (p.torque_cont, p.torque_peak):
-        for g, s in lewis_stress(p, T).items():
-            if s > p.sigma_allow + 1e-9:
-                w.append(f"Lewis: {g} {s:.2f} MPa > {p.sigma_allow} at {T} N m")
-    if p.pin_socket < p.pin_socket_min:
-        w.append(f"pin socket {p.pin_socket:.1f} < {p.pin_socket_min}")
-    if p.zs_["L1"] + p.pin_socket > p.zs_["c1"]:
-        w.append("pin socket runs out of the carrier plate")
     if p.sun_seat_r > min(p.sun_shaft_r, p.rotor_pcd / 2 - p.screw_head_d / 2 - p.slide_clr):
         w.append("adapter sun seat wider than the sun shaft or reaching the rotor screw heads")
     if p.a - p.r_tip2 - p.sun_shaft_r < 1.0:
         w.append("sun shaft within 1 mm of the small gear tips")
-    r0, r1 = p.link_r
-    if r0 < p.adapter_r + p.gear_gap or r1 > p.r_ring_tip - p.gear_gap:
-        w.append("pin link within gear_gap of the adapter or the ring bore")
-    if r0 > p.a - p.pin_head_d / 2 or r1 < p.a + p.pin_head_d / 2:
-        w.append("pin link narrower than the bolt heads")
+    if p.b1 - B < p.bearing_shoulder + p.fit_clr + p.min_wall - 1e-9:
+        w.append("large gear too thin for the 608 and its seat cone")
+    if p.seat_d > p.inner_land_d or p.seat_d / 2 <= p.pin_r:
+        w.append("carrier collar not on the inner-race land")
     if p.lip_top < p.motor_top_clr + p.min_wall - 1e-9:
-        w.append("housing lip under the bolt heads thinner than min_wall")
-    if p.zs_["L1"] + p.pin_socket + p.pin_thread_len + 1 > p.zs_["out"] - p.min_wall:
-        w.append("pin thread hole reaches the output face")
-    if p.spigot_r[0] < p.R_motor_bore:
-        w.append("spigot ring overhangs the motor bore")
-    if p.zs_["split"] + p.spigot_h + 0.2 + p.spigot_w + p.min_wall > p.zs_["ring_lo"]:
-        w.append("spigot groove roof within min_wall of the ring teeth")
+        w.append("housing lip thinner than min_wall")
+    if z["split"] < z["ring_lo"] - 1e-9:
+        w.append("housing split below the ring teeth: the lip would be in housing_upper")
+    if p.spigot_r[1] + p.slide_clr + p.min_wall > p.R_body + 1e-9:
+        w.append("spigot groove within min_wall of the outside")
+    if z["joint_seat"] + p.joint_head_h > z["s1"] + 1e-9:
+        w.append("joint screw heads stand above the ring top")
+    if p.R_body > p.R_cap + 1e-9:
+        w.append("housing body wider than the cap")
     if p.screw_len(p.joint_clamp) - p.joint_clamp < 4:
         w.append("joint screws engage < 4 mm in the tube")
     if p.R_motor_bore < p.r_ring_tip:
         w.append("motor would pass the ring bore: base could be part of the housing")
-    groove_lo = p.zs_["lid"] - (p.thread_turns + 1) * p.thread_pitch - p.thread_hw
-    if groove_lo < p.zs_["band"]:
-        w.append("lid thread groove reaches into the large-gear zone")
-    if p.thread_hw - p.thread_depth <= 0 or 2 * p.thread_hw >= p.thread_pitch:
-        w.append("thread profile: no crest/root flat")
+    if z["thread0"] < z["s1"]:
+        w.append("cap thread zone reaches below the ring top")
     for face, clamp, depth in (("rotor", p.adapter_t, p.rotor_thread_depth),
                                ("stator", p.base_clamp, p.stator_thread_depth)):  # fmt: skip
         if p.motor_screw_len(clamp, depth) - clamp < 2:
             w.append(f"{face} screws engage < 2 mm (no stock length fits)")
+    if p.R_cap - p.arm_w > p.R_shell + 0.1:
+        w.append("ratchet arm does not reach over the housing top face")
+    if p.pin_kind == "m8_bolt":
+        if z["out"] - p.bolt_head_h - p.bolt_len > z["s1"] - 1.0:
+            w.append(f"M8x{p.bolt_len} ends above the small gear's journal")
+        ro = p.hub_r / 2
+        for k in range(p.n_out_holes):
+            q = ro * np.exp(1j * math.radians(p.out_phase_deg + 360 * k / p.n_out_holes))
+            for j in range(p.n_planets):
+                c = p.a * np.exp(2j * math.pi * j / p.n_planets)
+                if abs(q - c) < p.bolt_cbore_r + p.m3_tap_d / 2 + 0.5:
+                    w.append("output hole runs into an M8 head counterbore")
+    elif p.pin_kind != "printed":
+        w.append(f"unknown pin_kind {p.pin_kind}")
     return w
 
 
 def wall_thicknesses(p: Params) -> dict[str, float]:
-    _, D, B = BEARINGS[p.bearing]
     z = p.zs_
-    seat = D / 2 + p.fit_clr
     return {
         "sun shaft around hex socket": p.sun_shaft_r - p.hex_sock,
-        "planet small root to 685 seat": p.r_root(p.m2, p.z2, p.x2) - seat,
-        "planet large root to 685 seat": p.r_root(p.m1, p.z1, p.x1) - seat,
-        "planet web between the 685 seats": (z["L1"] - B) - (z["s0"] + B),
+        "planet small root to journal bore": p.r_root(p.m2, p.z2, p.x2) - p.journal_r,
+        "planet large root to 608 seat": p.r_root(p.m1, p.z1, p.x1) - p.seat_r,
         "ring root to outside": p.R_body - p.r_ring_root,
-        "shell around the large-gear swing": p.R_body - p.R_sweep,
-        "shell behind the lid thread": p.R_body - p.R_sweep - p.thread_depth,
+        "shell behind the cap thread": p.R_thread_root - p.R_shell,
         "housing around motor": p.R_body - p.R_motor_bore,
-        "housing lip (axial)": p.lip_top - p.motor_top_clr,
+        "lower: lip (axial)": p.lip_top - p.motor_top_clr,
         "upper: joint counterbore to ring root": p.joint_r - p.cbore_r - p.r_ring_root,
         "upper: joint counterbore to outside": p.R_body - p.joint_r - p.cbore_r,
-        "upper: spigot groove to ring bore": p.spigot_r[0] - p.spigot_in_clr - p.r_ring_tip,
-        "upper: spigot groove to joint hole": p.joint_r
-        - p.m3_clear_d / 2
-        - p.spigot_r[1]
-        - p.slide_clr,
+        "spigot groove to joint hole": p.spigot_r[0] - p.spigot_in_clr - p.joint_r
+        - max(p.m3_clear_d / 2, p.hex_circ),
+        "spigot groove to outside": p.R_body - p.spigot_r[1] - p.slide_clr,
         "upper: under the joint heads": p.joint_clamp,
         "lower: joint hole to motor bore": p.joint_r - p.hex_circ - p.R_motor_bore,
         "lower: joint hole to outside": p.R_body - p.joint_r - p.hex_circ,
         "housing: base screw hole to motor bore": p.base_screw_r - p.hex_circ - p.R_motor_bore,
         "housing: base screw hole to outside": p.R_body - p.base_screw_r - p.hex_circ,
-        "base: counterbore to outside": p.R_body - p.base_screw_r - p.cbore_r,
-        "carrier plate around pins": p.carrier_r - p.a - p.pin_socket_d / 2,
-        "lid": p.lid_t,
-        "lid band around carrier cavity": p.R_sweep - p.thread_clr - p.cavity_r,
+        "base: screw head to outside": p.R_body - p.base_screw_r - p.cbore_r,
+        "carrier plate around collars": p.carrier_r - p.a - p.seat_d / 2,
+        "cap plate": p.lid_t,
+        "cap skirt": p.min_wall,
         "adapter around screw holes": p.adapter_r - p.rotor_pcd / 2 - p.m3_clear_d / 2,
         "adapter boss around rotor screw heads": p.rotor_pcd / 2 - p.screw_head_d / 2 - p.hex_sock,
         "base under counterbores": p.base_clamp,
-        "base: centre hole to stator screw": p.stator_pcd / 2
-        - p.m3_clear_d / 2
+        "base: centre hole to stator screw": p.stator_pcd / 2 - p.m3_clear_d / 2
         - (p.shaft_od / 2 + 0.5),
-        "base: wire notch to stator counterbore": p.stator_pcd
-        / 2
-        * math.sin(
-            math.radians(
-                min(p.wire_notch_deg % (360 / p.stator_n), -p.wire_notch_deg % (360 / p.stator_n))
-            )
-        )
-        - p.wire_notch_w / 2
-        - p.cbore_r,
+        "base: wire notch to stator counterbore": p.stator_pcd / 2 * math.sin(math.radians(
+            min(p.wire_notch_deg % (360 / p.stator_n), -p.wire_notch_deg % (360 / p.stator_n))))
+        - p.wire_notch_w / 2 - p.cbore_r,
         "hub around output holes": p.hub_r / 2 - p.m3_tap_d / 2,
+        "carrier under the output holes": z["out"] - p.out_hole_depth - z["c0"],
         "planet tips": planet_tip_gap(p),
-    }
+    }  # fmt: skip
 
 
 def thin_walls(p: Params) -> dict[str, float]:
     return {k: v for k, v in wall_thicknesses(p).items() if v < p.min_wall - 1e-9}
+
+
+def size_stepped(p: Params) -> dict:
+    """Outer size and the geometric lower bounds that set it (slack >= 0 means satisfied).
+
+    Replaces the sizing study's size_stepped(zs, z1, z2, zr, m1, m2, xs, x2, bearing_in="large"):
+    the same constraints, now read from Params so the summary and the model agree.
+    """
+    z = p.zs_
+    B = BEARINGS[p.bearing][2]
+    cand = {"cap thread crest (shell + min_wall + depth)": p.R_crest,
+            "joint counterbore + min_wall": p.joint_r + p.cbore_r + p.min_wall,
+            "joint hex hole + min_wall": p.joint_r + p.hex_circ + p.min_wall,
+            "motor bore + 2": p.R_motor_bore + 2.0,
+            "spigot groove + min_wall": p.spigot_r[1] + p.slide_clr + p.min_wall}  # fmt: skip
+    if p.flush_cap:
+        cand["cap OD (flush_cap)"] = p.R_cap
+    shell = {"large-gear swing + sweep_clr": p.R_sweep,
+             "joint counterbore column": p.joint_r + p.cbore_r}  # fmt: skip
+    joint = {"ring root + min_wall + counterbore": p.r_ring_root + p.min_wall + p.cbore_r,
+             "motor bore + min_wall + hex hole": p.R_motor_bore + p.min_wall + p.hex_circ}  # fmt: skip
+    s0 = {"adapter + rotor screw head + gap": p.adapter_t + p.head_h + p.head_gap,
+          "motor top clr + lip min_wall + gear_gap": p.motor_top_clr + p.min_wall + p.gear_gap}  # fmt: skip
+    height = {"base": p.base_t, "motor": p.motor_h, "s0 (sun floor)": z["s0"],
+              "b2 small gear (journal = pin d)": p.b2, "gear_gap": p.gear_gap,
+              "b1 large gear (608 B + seat cone + floor)": p.b1, "carrier_gap": p.carrier_gap,
+              "carrier_t": p.carrier_t, "lid rib + axial clr": p.lid_rib_h + p.lid_axial_clr,
+              "lid_t": p.lid_t, "hub_stub": p.hub_stub}  # fmt: skip
+    slack = {
+        "sun shaft - hex socket - min_wall": p.sun_shaft_r - p.hex_sock - p.min_wall,
+        "small root - journal bore - min_wall": p.r_root(p.m2, p.z2, p.x2) - p.journal_r
+        - p.min_wall,
+        "large root - 608 seat - min_wall": p.r_root(p.m1, p.z1, p.x1) - p.seat_r - p.min_wall,
+        "planet tips - min_wall": planet_tip_gap(p) - p.min_wall,
+        "b1 - (B + seat cone + min_wall floor)": p.b1 - B - p.bearing_shoulder - p.fit_clr
+        - p.min_wall,
+        "lower joint hole - motor bore - min_wall": p.joint_r - p.hex_circ - p.R_motor_bore
+        - p.min_wall,
+        "upper joint counterbore - ring root - min_wall": p.joint_r - p.cbore_r - p.r_ring_root
+        - p.min_wall,
+        "carrier under output holes - min_wall": z["out"] - p.out_hole_depth - z["c0"]
+        - p.min_wall,
+    }  # fmt: skip
+    return {"D_body": 2 * p.R_body, "D_max": 2 * p.R_cap, "height": p.height,
+            "R_body from": cand, "R_shell from": shell, "joint_r from": joint, "s0 from": s0,
+            "height terms": height, "slack": slack}  # fmt: skip
 
 
 # ---------------------------------------------------------------- kinematics
@@ -614,72 +713,34 @@ def _herring(p: Params, pts, r_pitch: float, hand: int) -> Solid:
     return Pos(0, 0, dz) * herringbone(q, pts, r_pitch, hand, p.zs_["L0"] - dz, p.zs_["L1"] - dz)
 
 
-def _sector(r0: float, r1: float, deg0: float, deg1: float, z0: float, h: float) -> Part:
-    """Annular sector, angles in degrees (true arcs, so neighbouring revolved cuts line up)."""
-    rect = Face(Wire(Polyline((r0, 0, z0), (r1, 0, z0), (r1, 0, z0 + h), (r0, 0, z0 + h),
-                              close=True).edges()))  # fmt: skip
-    return revolve(rect, Axis.Z, deg1 - deg0).rotate(Axis.Z, deg0)
-
-
-def _thread(p: Params, r: float, z0: float, turns: int) -> Solid:
-    """Right-hand trapezoid ridge, 45 deg flanks, bottom r .. r + thread_depth, from z0 for turns.
-
-    Starts at angle 0; z0 is a whole number of pitches from z["lid"], so the lid ridge and the
-    housing groove lie on one helix. 0.1 mm of straight root keeps it fused to / cut from its base.
-    """
-    hw, hd = p.thread_hw, p.thread_depth
-    pts = [(r - 0.1, 0, -hw), (r, 0, -hw), (r + hd, 0, hd - hw), (r + hd, 0, hw - hd), (r, 0, hw),
-           (r - 0.1, 0, hw)]  # fmt: skip
-    path = Helix(p.thread_pitch, turns * p.thread_pitch, r)
-    return Pos(0, 0, z0) * sweep(Face(Wire(Polyline(*pts, close=True).edges())), path,
-                                 is_frenet=True)  # fmt: skip
+def tooth_r(p: Params) -> tuple[float, float]:
+    """Radial extent of the ratchet tooth: over the housing top face, inside the thread root."""
+    return p.R_shell + 0.1, p.R_thread_root - 0.1
 
 
 def tooth_deg(p: Params) -> float:
-    """Angle of the tooth's vertical (loosening-side) face, lid at its assembled turn."""
-    r = p.R_body - p.arm_w / 2
+    """Angle of the tooth's vertical (loosening-side) face, cap at its assembled turn."""
+    r = sum(tooth_r(p)) / 2
     return p.arm_at_deg + math.degrees((p.tooth_flat + p.tooth_h + 0.3) / r)
 
 
 def lid_part(p: Params, turn_deg: float = 0.0, lift: float = 0.0) -> Part:
-    """Screw-on lid. Seated: its underside rests on the housing top (z["lid"]), which fixes the
-    rib-to-carrier gap lid_axial_clr whatever the thread does. turn_deg/lift move it."""
+    """Screw-on cap. Seated, its plate underside rests on the housing top (z["lid"]), which fixes
+    the rib-to-carrier gap lid_axial_clr whatever the thread does. turn_deg/lift move it."""
     z = p.zs_
-    lid = Pos(0, 0, z["lid"]) * Cylinder(p.R_body, p.lid_t, align=MIN)
-    r_band = p.R_sweep - p.thread_clr
-    lid += Pos(0, 0, z["band"]) * Cylinder(r_band, z["lid"] - z["band"], align=MIN)
-    lid += _thread(p, r_band, z["lid"] - p.thread_turns * p.thread_pitch, p.thread_turns)
-    # carrier cavity under the rib
-    lid -= Pos(0, 0, z["band"]) * Cylinder(p.cavity_r, z["lid"] - p.lid_rib_h - z["band"],
-                                           align=MIN)  # fmt: skip
+    lid = cp.screw_cap(p.R_thread_root, p.thread_depth, p.thread_pitch, p.thread_clr,
+                       p.min_wall, z["lid"], p.lid_t, p.thread_turns, p.cavity_r,
+                       p.lid_rib_h)  # fmt: skip
     g = p.lid_bore_clr
     bore = p.hub_r + g
     lid -= Pos(0, 0, z["c1"]) * Cone(p.carrier_r + g * math.sqrt(2), bore,
                                      p.hub_step + g * (math.sqrt(2) - 1), align=MIN)  # fmt: skip
     lid -= Pos(0, 0, z["c1"]) * Cylinder(bore, z["top"] - z["c1"], align=MIN)
-    # ratchet arm: a rim segment cut free by an arc slot and an end slot; a 45 deg wedge under it
-    # separates it from the band (prints without support upside down). Lift its end to unscrew.
-    a0, a1 = p.arm_at_deg, p.arm_at_deg + p.arm_deg
-    r_in = p.R_body - p.arm_w
-    rs = r_in - p.arm_slot
-    ds = math.degrees(p.arm_slot / p.R_body)
-    lid -= _sector(rs, r_in, a0 - ds, a1, z["lid"], p.lid_t)
-    lid -= _sector(rs, p.R_body + 1, a0 - ds, a0, z["lid"], p.lid_t)
-    dw = p.R_body + 1 - rs
-    wedge = Face(Wire(Polyline((rs, 0, z["lid"]), (p.R_body + 1, 0, z["lid"]),
-                               (p.R_body + 1, 0, z["lid"] - dw), close=True).edges()))  # fmt: skip
-    lid -= revolve(wedge, Axis.Z, a1 - a0 + ds).rotate(Axis.Z, a0 - ds)
-    # tooth under the arm end: vertical face towards +theta, ramp towards -theta (tightening)
-    th, tf = p.tooth_h, p.tooth_flat
-    prof = Face(Wire(Polyline((0, 0, 0), (0, 0, -th), (0, -tf, -th), (0, -tf - th, 0),
-                              close=True).edges()))  # fmt: skip
-    r0, r1 = p.R_sweep + 0.1, p.R_body - 0.3
-    tooth = Pos(r0, 0, z["lid"]) * extrude(prof, r1 - r0, (1, 0, 0))
-    lid += tooth.rotate(Axis.Z, tooth_deg(p))
-    # grip grooves on the rim
-    grip = [Rot(0, 0, 360 * k / p.n_grip) * Pos(p.R_body - p.grip_d, -p.grip_w / 2, z["lid"])
-            * Box(p.grip_d + 1, p.grip_w, p.lid_t, align=MIN) for k in range(p.n_grip)]  # fmt: skip
-    lid -= grip
+    skirt_h = (p.thread_turns + 0.5) * p.thread_pitch
+    lid = cp.ratchet_arm(lid, p.R_cap, p.arm_w, p.arm_slot, p.arm_at_deg, p.arm_deg, z["lid"],
+                         p.lid_t, skirt_h, tooth_deg(p), tooth_r(p), p.tooth_h,
+                         p.tooth_flat)  # fmt: skip
+    lid -= cp.grip_grooves_cut(p.R_cap, z["lid"], p.lid_t, p.n_grip, p.grip_w, p.grip_d)
     if turn_deg or lift:
         lid = Pos(0, 0, lift) * lid.rotate(Axis.Z, turn_deg)
     return lid
@@ -698,149 +759,100 @@ def make_parts(p: Params) -> dict[str, Part]:
         p.shaft_id / 2, p.motor_h, align=MIN
     )
 
-    adapter = Cylinder(p.adapter_r, p.adapter_t, align=MIN)
-    adapter += _hexagon(p.hex_af, p.adapter_t, z["s0"] + p.hex_engage - p.adapter_t)
-    adapter += Pos(0, 0, p.adapter_t) * Cylinder(p.sun_seat_r, z["s0"] - p.adapter_t, align=MIN)
-    adapter -= _ring_holes(p.rotor_n, p.rotor_pcd / 2, p.m3_clear_d, 0, p.adapter_t,
-                           math.radians(p.rotor_phase_deg))  # fmt: skip
-    parts["sun_adapter"] = adapter
+    parts["sun_adapter"] = cp.sun_adapter(p.adapter_r, p.adapter_t, p.sun_seat_r, z["s0"],
+                                          p.hex_af, z["s0"] + p.hex_engage, p.rotor_n,
+                                          p.rotor_pcd, p.m3_clear_d, p.rotor_phase_deg)  # fmt: skip
 
     # sun: herringbone teeth at the large-gear level on a shaft down to the adapter hex
     sun = _herring(p, outline(q1, p.zs, half_thickness(q1, p.zs, p.xs), p.r_tip_sun,
                               p.r_root(p.m1, p.zs, p.xs)), q1.r(p.zs), 1)  # fmt: skip
     zt = z["L0"] - p.gear_gap
     # the L0 tooth section continued straight down to the shaft: no overhanging tooth bottoms
-    # (the planet's large gear starts at L0, its small gear tips stay > sun_shaft_r away)
     sun += extrude(sun.faces().sort_by(Axis.Z)[0], p.gear_gap, (0, 0, -1))
     sun += Pos(0, 0, z["s0"]) * Cylinder(p.sun_shaft_r, zt - z["s0"], align=MIN)
-    sock = p.hex_af + 2 * p.hex_clr
-    sun -= _hexagon(sock, z["s0"], p.hex_engage + p.gear_gap)
-    mouth = RegularPolygon(sock / 2 + p.hex_chamfer, 6, major_radius=False)
-    parts["sun"] = sun - Pos(0, 0, z["s0"]) * extrude(mouth, p.hex_chamfer, taper=45)
+    parts["sun"] = sun - cp.hex_socket_cut(p.hex_af, p.hex_clr, z["s0"],
+                                           p.hex_engage + p.gear_gap, p.hex_chamfer)  # fmt: skip
 
-    # planet: spur small gear s0..L0 + herringbone large gear L0..L1, tooth 0 of both on +X
+    # planet: spur small gear s0..L0 + herringbone large gear L0..L1, tooth 0 of both on +X;
+    # 608 in the large end (seat cone, min_wall floor over L0), journal bore through both
     small = _spur(outline(q2, p.z2, half_thickness(q2, p.z2, p.x2), p.r_tip2,
                           p.r_root(p.m2, p.z2, p.x2)), z["s0"], z["L0"])  # fmt: skip
     large = _herring(p, outline(q1, p.z1, half_thickness(q1, p.z1, p.x1), p.r_tip1,
                                 p.r_root(p.m1, p.z1, p.x1)), q1.r(p.z1), -1)  # fmt: skip
     planet = small.fuse(large).clean()
-    planet -= Pos(0, 0, z["L1"] - B) * Cylinder(D / 2 + p.fit_clr, B, align=MIN)
-    planet -= Pos(0, 0, z["s0"]) * Cylinder(D / 2 + p.fit_clr, B, align=MIN)
-    planet -= Pos(0, 0, z["s0"]) * Cylinder(D / 2 - p.bearing_shoulder, z["L1"] - z["s0"],
-                                            align=MIN)  # fmt: skip
-    # large-end seat floor as a 45 deg cone: printed large face down, a flat 1 mm ledge would
-    # overhang; the bearing's outer-race edge sits on the cone instead
-    dr = p.bearing_shoulder + p.fit_clr
-    planet -= Pos(0, 0, z["L1"] - B - dr) * Cone(D / 2 - p.bearing_shoulder, D / 2 + p.fit_clr, dr,
-                                                 align=MIN)  # fmt: skip
-    mark_r = (D / 2 + p.r_root(p.m1, p.z1, p.x1)) / 2  # phase mark on the large gear's top face
-    planet -= Pos(mark_r, 0, z["L1"] - 0.4) * Cylinder(0.6, 0.4, align=MIN)
+    planet -= cp.bearing_seat_cut(D, B, p.fit_clr, z["L1"], z["L0"] + p.min_wall)
+    planet -= Pos(0, 0, z["s0"]) * Cylinder(p.journal_r, z["L1"] - z["s0"], align=MIN)
+    mark_r = (p.seat_r + p.r_root(p.m1, p.z1, p.x1)) / 2  # phase mark on the large top face
+    planet -= Pos(mark_r, 0, z["L1"] - 0.4) * Cylinder(0.5, 0.4, align=MIN)
 
     carrier = Pos(0, 0, z["c0"]) * Cylinder(p.carrier_r, p.carrier_t, align=MIN)
     carrier += Pos(0, 0, z["c1"]) * Cone(p.carrier_r, p.hub_r, p.hub_step, align=MIN)
     zh = z["c1"] + p.hub_step
     carrier += Pos(0, 0, zh) * Cylinder(p.hub_r, z["out"] - zh, align=MIN)
-    carrier -= _ring_holes(p.n_out_holes, p.hub_r / 2, p.m3_tap_d, z["out"] - 8, 8)
-    pin = f"_pin_{p.pin_kind}_5x{p.pin_len:g}"
-    r0, r1 = p.link_r
-    link = Pos(0, 0, p.head_top) * (Cylinder(r1, p.link_t, align=MIN)
-                                    - Cylinder(r0, p.link_t, align=MIN))  # fmt: skip
-    shank = Cylinder(d / 2, p.pin_len, align=MIN)
-    if p.pin_kind == "shoulder_bolt":
-        shank += Pos(0, 0, -p.pin_head_h) * Cylinder(p.pin_head_d / 2, p.pin_head_h, align=MIN)
-        shank += Pos(0, 0, p.pin_len) * Cylinder(
-            p.pin_tap_d / 2, p.pin_thread_len, align=MIN
-        )  # M4 at its core d
+    carrier -= cp.ring_holes(p.n_out_holes, p.hub_r / 2, p.m3_tap_d, z["out"] - p.out_hole_depth,
+                             p.out_hole_depth, p.out_phase_deg)  # fmt: skip
+    zc = z["L1"] + p.seat_gap  # collar bottom, seat_gap over the inner race
+    if p.pin_kind == "printed":
+        pin = cp.printed_pin(p.pin_r, z["s0"], z["c0"], p.pin_chamfer, p.seat_d / 2,
+                             z["c0"] - zc)  # fmt: skip
+    else:
+        pin = Pos(0, 0, zc) * Cylinder(p.seat_d / 2, z["c0"] - zc, align=MIN)
+        zb = z["out"] - p.bolt_head_h
+        bolt = Pos(0, 0, zb - p.bolt_len) * Cylinder(d / 2, p.bolt_len, align=MIN)
+        bolt += Pos(0, 0, zb) * Cylinder(p.bolt_head_d / 2, p.bolt_head_h, align=MIN)
     for k, (c, turn) in enumerate(planet_states(p, 0.0)):
         x, y = c.real, c.imag
         parts[f"planet_{k}"] = Pos(x, y, 0) * planet.rotate(Axis.Z, math.degrees(turn))
-        for tag, zb in (("large", z["L1"] - B), ("small", z["s0"])):
-            parts[f"_bearing_{p.bearing}_{tag}_{k}"] = Pos(x, y, zb) * (
-                Cylinder(D / 2, B, align=MIN) - Cylinder(d / 2, B, align=MIN)
-            )
-        parts[f"{pin}_{k}"] = Pos(x, y, p.head_top) * shank
-        link -= Pos(x, y, p.head_top) * Cylinder(d / 2 + p.slide_clr, p.link_t, align=MIN)
-        carrier += Pos(x, y, z["L1"] + p.seat_gap) * Cylinder(
-            p.shoulder_r, p.carrier_gap - p.seat_gap, align=MIN
-        )
-        carrier -= Pos(x, y, z["L1"]) * Cylinder(p.pin_socket_d / 2, p.pin_socket, align=MIN)
-        carrier -= Pos(x, y, z["L1"] + p.pin_socket) * Cylinder(
-            p.pin_tap_d / 2, p.pin_thread_len + 1, align=MIN
-        )
+        parts[f"_bearing_{p.bearing}_{k}"] = Pos(x, y, 0) * cp.bearing_dummy(d, D, B, z["L1"] - B)
+        carrier += Pos(x, y, 0) * pin
+        if p.pin_kind == "m8_bolt":
+            carrier -= Pos(x, y, zc) * Cylinder(p.bolt_tap_d / 2, z["out"] - zc, align=MIN)
+            carrier -= Pos(x, y, zb) * Cylinder(p.bolt_cbore_r, p.bolt_head_h, align=MIN)
+            parts[f"_bolt_M8x{p.bolt_len}_{k}"] = Pos(x, y, 0) * bolt
     parts["carrier_output"] = carrier
-    parts["pin_link"] = link
 
     # base: under the stator, screwed to it and to the housing from below
     base = Pos(0, 0, z["bottom"]) * Cylinder(p.R_body, p.base_t, align=MIN)
     base -= Pos(0, 0, z["bottom"]) * Cylinder(p.shaft_od / 2 + 0.5, p.base_t, align=MIN)
-    sph = math.radians(p.stator_phase_deg)
     cb = p.base_t - p.base_clamp
-    base -= _ring_holes(p.stator_n, p.stator_pcd / 2, p.m3_clear_d, z["bottom"], p.base_t, sph)
-    base -= _ring_holes(p.n_base_screws, p.base_screw_r, p.m3_clear_d, z["bottom"], p.base_t, sph)
-    if cb > 0:  # heads stand proud of the base when base_t == base_clamp
-        base -= _ring_holes(p.stator_n, p.stator_pcd / 2, 2 * p.cbore_r, z["bottom"], cb, sph)
-        base -= _ring_holes(p.n_base_screws, p.base_screw_r, 2 * p.cbore_r, z["bottom"], cb, sph)
+    for n, r in ((p.stator_n, p.stator_pcd / 2), (p.n_base_screws, p.base_screw_r)):
+        base -= cp.ring_holes(n, r, p.m3_clear_d, z["bottom"], p.base_t, p.stator_phase_deg)
+        if cb > 0:  # heads stand proud of the base when base_t == base_clamp
+            base -= cp.ring_holes(n, r, 2 * p.cbore_r, z["bottom"], cb, p.stator_phase_deg)
     base -= (Rot(0, 0, p.stator_phase_deg + p.wire_notch_deg)
              * Pos(p.wire_notch_r0, -p.wire_notch_w / 2, z["bottom"])
              * Box(p.R_body - p.wire_notch_r0 + 1, p.wire_notch_w, p.base_t, align=MIN))  # fmt: skip
     parts["base"] = base
 
-    # housing: motor tube, lip, spur ring, thin shell with the lid thread
-    h = Pos(0, 0, z["base_top"]) * Cylinder(p.R_body, z["lid"] - z["base_top"], align=MIN)
+    # housing: motor tube, lip (in the lower), spur ring, thin shell, external cap thread on the top band
+    zt0 = z["thread0"]
+    h = Pos(0, 0, z["base_top"]) * Cylinder(p.R_body, zt0 - z["base_top"], align=MIN)
+    h += Pos(0, 0, zt0) * Cylinder(p.R_thread_root + cp.ROOT_BURY, z["lid"] - zt0, align=MIN)
+    h += cp.housing_thread(p.R_thread_root, p.thread_depth, p.thread_pitch, z["lid"],
+                           p.thread_turns + 1)  # fmt: skip
     h -= Pos(0, 0, z["base_top"]) * Cylinder(p.R_motor_bore, p.motor_h + p.motor_top_clr,
                                              align=MIN)  # fmt: skip
     h -= Cylinder(p.lip_r, z["s1"], align=MIN)
-    h -= Pos(0, 0, p.lip_top) * Cylinder(p.r_ring_tip, z["ring_lo"] - p.lip_top, align=MIN)
     qr = replace(q2, fillet_m=p.ring_fillet_m)
     ring = _spur(outline(qr, p.zr, ring_half_space(qr), p.r_ring_root, p.r_ring_tip, cutter=True),
                  z["ring_lo"], z["s1"])  # fmt: skip
     h -= ring.rotate(Axis.Z, math.degrees(ring_phase(p)))
-    h -= Pos(0, 0, z["s1"]) * Cylinder(p.R_sweep, z["lid"] - z["s1"], align=MIN)
-    # lid thread groove (one turn below the lid ridge's end, so the lid stops on the top face)
-    # and ratchet notches in the top face, one in front of the tooth at the assembled turn
-    n = p.thread_turns + 2
-    h -= _thread(p, p.R_sweep, z["lid"] - (n - 1) * p.thread_pitch, n)
-    r_n = p.R_body - p.arm_w / 2
-    w0 = math.degrees(p.notch_play / r_n)
-    w1 = math.degrees((p.tooth_flat + p.tooth_h + p.notch_play) / r_n)
-    dn = p.tooth_h + 0.2
-    h -= [_sector(p.R_sweep - 1, p.R_body + 1, c - w1, c + w0, z["lid"] - dn, dn + 1)
-          for c in (tooth_deg(p) + 360 * k / p.n_notches for k in range(p.n_notches))]  # fmt: skip
+    h -= Pos(0, 0, z["s1"]) * Cylinder(p.R_shell, z["lid"] - z["s1"], align=MIN)
+    h -= cp.ratchet_notches_cut(p.R_shell - 1, p.R_crest + 1, z["lid"], p.n_notches, tooth_deg(p),
+                                sum(tooth_r(p)) / 2, p.tooth_h, p.tooth_flat,
+                                p.notch_play)  # fmt: skip
     hd = p.screw_len(p.base_clamp) - p.base_clamp + p.hex_hole_extra
     for k in range(p.n_base_screws):
-        ph = sph + 2 * math.pi * k / p.n_base_screws
-        h -= Pos(p.base_screw_r * math.cos(ph), p.base_screw_r * math.sin(ph), 0) * _hexagon(
-            p.screw_d, z["base_top"], hd
-        )
-    # split at the lip underside: the upper prints on that face, the lower is a plain tube
-    zsp = z["split"]
-    big = 2 * p.R_body + 2
-    upper = h & (Pos(-big / 2, -big / 2, zsp) * Box(big, big, z["lid"] - zsp, align=MIN))
-    lower = h & (
-        Pos(-big / 2, -big / 2, z["base_top"]) * Box(big, big, zsp - z["base_top"], align=MIN)
-    )
-    r0, r1 = p.spigot_r
-    spigot = Cylinder(r1, p.spigot_h, align=MIN) - Cylinder(r0, p.spigot_h, align=MIN)
-    lower += Pos(0, 0, zsp) * spigot
-    # groove: walls to spigot_h + 0.2, then a 45 deg roof (prints without support)
-    g0, g1 = r0 - p.spigot_in_clr, r1 + p.slide_clr
-    zw = zsp + p.spigot_h + 0.2
-    zr = zw + (g1 - g0) / 2
-    groove = Face(Wire(Polyline((g0, 0, zsp), (g1, 0, zsp), (g1, 0, zw), ((g0 + g1) / 2, 0, zr),
-                                (g0, 0, zw), close=True).edges()))  # fmt: skip
-    upper -= revolve(groove, Axis.Z, 360)
-    jph = math.radians(p.joint_phase_deg)
-    upper -= _ring_holes(p.n_joint, p.joint_r, p.m3_clear_d, zsp, p.joint_clamp, jph)
-    upper -= _ring_holes(p.n_joint, p.joint_r, 2 * p.cbore_r, z["joint_seat"],
-                         z["s1"] - z["joint_seat"], jph)  # fmt: skip
-    jd = p.screw_len(p.joint_clamp) - p.joint_clamp + p.hex_hole_extra
-    for k in range(p.n_joint):
-        ph = jph + 2 * math.pi * k / p.n_joint
-        lower -= Pos(p.joint_r * math.cos(ph), p.joint_r * math.sin(ph), 0) * _hexagon(
-            p.screw_d, zsp - jd, jd
-        )
+        ph = math.radians(p.stator_phase_deg) + 2 * math.pi * k / p.n_base_screws
+        h -= cp.hex_prism(p.screw_d, z["base_top"], hd, p.base_screw_r * math.cos(ph),
+                          p.base_screw_r * math.sin(ph))  # fmt: skip
+    upper, lower, ring = cp.split_housing(
+        h, z["split"], p.R_body, p.spigot_r[0], p.spigot_w, p.spigot_h, p.spigot_in_clr,
+        p.slide_clr, p.n_joint, p.joint_r, p.joint_phase_deg, p.joint_clamp, z["s1"], p.screw_d,
+        p.m3_clear_d, p.screw_head_d, p.screw_len(p.joint_clamp), p.hex_hole_extra)  # fmt: skip
     parts["housing_upper"] = upper
     parts["housing_lower"] = lower
+    parts["spigot_ring"] = ring
     parts["lid"] = lid_part(p)
     return parts
 
@@ -848,21 +860,22 @@ def make_parts(p: Params) -> dict[str, Part]:
 def pose(p: Params, home: dict[str, Part], psi: float) -> dict[str, Part]:
     """Sun at angle psi [rad] (ring fixed, carrier psi/ratio)."""
     rot = Location((0, 0, 0), (0, 0, math.degrees(psi)))
-    move = {"sun": rot, "sun_adapter": rot,
-            "carrier_output": Location((0, 0, 0), (0, 0, math.degrees(psi / p.ratio))),
-            "pin_link": Location((0, 0, 0), (0, 0, math.degrees(psi / p.ratio)))}  # fmt: skip
+    rc = Location((0, 0, 0), (0, 0, math.degrees(psi / p.ratio)))
+    move = {"sun": rot, "sun_adapter": rot, "carrier_output": rc}
     for k, ((c0, t0), (c, t)) in enumerate(zip(planet_states(p, 0.0), planet_states(p, psi))):
         move[f"planet_{k}"] = (Pos(c.real, c.imag, 0)
                                * Location((0, 0, 0), (0, 0, math.degrees(t - t0)))
                                * Pos(-c0.real, -c0.imag, 0))  # fmt: skip
-        shift = Pos(c.real - c0.real, c.imag - c0.imag, 0)
         for n in home:
-            if n.endswith(f"_{k}") and n.startswith(("_bearing", "_pin")):
-                move[n] = shift
+            if n.endswith(f"_{k}") and n.startswith("_bearing"):
+                move[n] = Pos(c.real - c0.real, c.imag - c0.imag, 0)
+            elif n.endswith(f"_{k}") and n.startswith("_bolt"):
+                move[n] = rc
     return {k: move[k] * v if k in move else v for k, v in home.items()}
 
 
-PRINT_FLIP = {"lid", "carrier_output", "planet_0", "planet_1", "planet_2"}  # large face down
+# large face down; housing_lower on its lip top (the split face)
+PRINT_FLIP = {"lid", "carrier_output", "planet_0", "planet_1", "planet_2", "housing_lower"}
 
 
 def print_pose(name: str, part: Part) -> Part:
@@ -870,6 +883,19 @@ def print_pose(name: str, part: Part) -> Part:
         part = part.rotate(Axis.X, 180)
     bb = part.bounding_box()
     return Pos(-bb.center().X, -bb.center().Y, -bb.min.Z) * part
+
+
+def max_bridge(part: Part) -> float:
+    """Widest flat ceiling of a part in print pose: max over downward planar faces above the bed
+    of the smaller bounding-box side (a circular ceiling counts as its outer diameter)."""
+    out = 0.0
+    for f in part.faces():
+        if f.geom_type != GeomType.PLANE or f.bounding_box().max.Z < 1e-6:
+            continue
+        if f.normal_at().Z < -0.999 and f.area > 0.1:
+            bb = f.bounding_box()
+            out = max(out, min(bb.size.X, bb.size.Y))
+    return out
 
 
 def build(p: Params, out: Path) -> dict[str, Path]:
@@ -906,52 +932,48 @@ def build(p: Params, out: Path) -> dict[str, Path]:
 def bom(p: Params) -> str:
     rows = [
         ("motor iFlight GM5208-24", 1),
-        (f"{p.bearing} {BEARINGS[p.bearing]}", 2 * p.n_planets),
-        (
-            f"shoulder bolt d5 x {p.pin_len:g} M4 x {p.pin_thread_len:g} (or dowel d5 x {p.pin_len:g})",
-            p.n_planets,
-        ),
-        (
-            (
-                f"M3x{p.motor_screw_len(p.adapter_t, p.rotor_thread_depth)} ultra-low head "
-                f"(ESCO, head {p.head_h}) adapter -> rotor"
-            ),
-            p.rotor_n,
-        ),
-        (f"M3x{p.motor_screw_len(p.base_clamp, p.stator_thread_depth)} base -> stator", p.stator_n),
+        (f"{p.bearing} {BEARINGS[p.bearing]} (in the planets' large gears)", p.n_planets),
+    ]
+    if p.pin_kind == "m8_bolt":
+        rows.append((f"M8x{p.bolt_len} low head (DIN 7984) carrier -> planet pin", p.n_planets))
+    rows += [
+        ((f"M3x{p.motor_screw_len(p.adapter_t, p.rotor_thread_depth)} ultra-low head "
+          f"(ESCO, head {p.head_h}) adapter -> rotor"), p.rotor_n),
+        (f"M3x{p.motor_screw_len(p.base_clamp, p.stator_thread_depth)} base -> stator",
+         p.stator_n),
         (f"M3x{p.screw_len(p.base_clamp)} base -> housing_lower (hex hole)", p.n_base_screws),
         (f"M3x{p.screw_len(p.joint_clamp)} housing_upper -> housing_lower (hex hole)", p.n_joint),
-    ]
+    ]  # fmt: skip
     return "\n".join(f"  {n:3d} x {s}" for s, n in rows)
 
 
 def summary(p: Params) -> str:
     z = p.zs_
+    s = size_stepped(p)
     lines = [
-        (
-            f"teeth sun/large/small/ring={p.zs}/{p.z1}/{p.z2}/{p.zr} m1={p.m1} m2={p.m2} "
-            f"x s/1/2/r={p.xs}/{p.x1}/{p.x2}/{p.xr:.3f} ratio={p.ratio:.3f} "
-            f"assembly (zs z2 + zr z1)/3={(p.zs * p.z2 + p.zr * p.z1) / p.n_planets:g}"
-        ),
-        (
-            f"a={p.a:.3f} ring aw={math.degrees(p.aw2):.2f} deg ring tip/root d="
-            f"{2 * p.r_ring_tip:.2f}/{2 * p.r_ring_root:.2f} swing R={p.R_sweep:.2f}"
-        ),
-        (
-            f"outer_d={2 * p.R_body:.2f} height={p.height:.2f} (bottom {z['bottom']:.2f} .. out "
-            f"{z['out']:.2f}) b1={p.b1} b2={p.b2} hub_d={2 * p.hub_r:.2f} pin socket={p.pin_socket}"
-        ),
+        (f"teeth sun/large/small/ring={p.zs}/{p.z1}/{p.z2}/{p.zr} m1={p.m1} m2={p.m2} "
+         f"x s/1/2/r={p.xs}/{p.x1}/{p.x2}/{p.xr:.3f} ratio={p.ratio:.3f} "
+         f"assembly (zs z2 + zr z1)/3={(p.zs * p.z2 + p.zr * p.z1) / p.n_planets:g}"),
+        (f"a={p.a:.3f} ring aw={math.degrees(p.aw2):.2f} deg ring tip/root d="
+         f"{2 * p.r_ring_tip:.2f}/{2 * p.r_ring_root:.2f} swing R={p.R_sweep:.2f}"),
+        (f"body d={s['D_body']:.2f} max d (cap)={s['D_max']:.2f} height={s['height']:.2f} "
+         f"(bottom {z['bottom']:.2f} .. out {z['out']:.2f}) b1={p.b1} b2={p.b2} "
+         f"hub_d={2 * p.hub_r:.2f} pin={p.pin_kind} d={2 * p.pin_r:.2f} journal bore "
+         f"d={2 * p.journal_r:.2f}"),
         "z: " + " ".join(f"{k}={v:.2f}" for k, v in z.items()),
-        (
-            "tip land sun/large/small/ring="
-            f"{tip_land(p, p.m1, p.zs, p.xs, p.r_tip_sun):.2f}/"
-            f"{tip_land(p, p.m1, p.z1, p.x1, p.r_tip1):.2f}/"
-            f"{tip_land(p, p.m2, p.z2, p.x2, p.r_tip2):.2f}/{ring_tip_land(p):.2f}"
-        ),
-    ]
+        ("tip land sun/large/small/ring="
+         f"{tip_land(p, p.m1, p.zs, p.xs, p.r_tip_sun):.2f}/"
+         f"{tip_land(p, p.m1, p.z1, p.x1, p.r_tip1):.2f}/"
+         f"{tip_land(p, p.m2, p.z2, p.x2, p.r_tip2):.2f}/{ring_tip_land(p):.2f}"),
+    ]  # fmt: skip
+    for k in ("R_body from", "R_shell from", "joint_r from", "s0 from", "height terms"):
+        lines.append(f"{k}: " + ", ".join(f"{n}={v:.2f}" for n, v in s[k].items()))
+    lines.append("slack (>= 0): " + ", ".join(f"{n}={v:.2f}" for n, v in s["slack"].items()))
     for T in (p.torque_cont, p.torque_peak):
-        lines.append(f"Lewis T_in={T} N m: "
-                     + " ".join(f"{g}={v:.2f}" for g, v in lewis_stress(p, T).items()))  # fmt: skip
+        lines.append(f"reference T_in={T} N m: Lewis "
+                     + " ".join(f"{g}={v:.2f}" for g, v in lewis_stress(p, T).items())
+                     + " MPa; " + ", ".join(f"{g}={v:.2f}"
+                                           for g, v in reference_loads(p, T).items()))  # fmt: skip
     lines.append("BOM (bought):\n" + bom(p))
     return "\n".join(lines)
 

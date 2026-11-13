@@ -11,6 +11,7 @@ ruff = ">=0.17.4,<0.18"
 
 [pypi-dependencies]
 build123d = "*"
+bd-warehouse = ">=0.4.0, <0.5"
 
 [tasks]
 build = "python reducer.py"
