@@ -104,11 +104,20 @@ def test_split_housing():
 
 
 def test_sun_adapter_and_socket():
-    a = cp.sun_adapter(16.0, 3.0, 8.0, 5.0, 7.0, 10.0, 4, 25.0, 3.4)
-    assert a.bounding_box().max.Z == pytest.approx(10.0)
+    a = cp.sun_adapter(
+        16.0, 3.0, 8.0, 5.0, 7.0, 0.15, 4.5, 0.4, 4, 25.0, 3.4, (6.2, 4.0), -20.0, -30.0, 3.2, 2.1
+    )
+    assert a.bounding_box().max.Z == pytest.approx(5.0)
+    assert a.bounding_box().min.Z == pytest.approx(-30.0)
     assert a.is_inside((7.5, 0, 4.9)) and not a.is_inside((7.5, 0, 5.1))  # seat top
-    assert a.is_inside((0, 3.4, 9.0)) and not a.is_inside((0, 3.6, 9.0))  # hex across flats 7
+    assert not a.is_inside((0, 3.6, 2.0)) and a.is_inside((0, 3.7, 2.0))  # socket af 7.3
+    assert not a.is_inside((0, 0, 0.55)) and a.is_inside((0, 0, 0.45))  # socket floor
     assert not a.is_inside((12.5, 0, 1.0))  # screw hole
+    assert a.is_inside((6.1, 0, -10.0)) and not a.is_inside((6.3, 0, -10.0))  # upper shaft
+    assert a.is_inside((3.9, 0, -25.0)) and not a.is_inside((4.1, 0, -25.0))  # lower shaft
+    assert a.is_inside((5.0, 0, -18.9)) and not a.is_inside((5.0, 0, -19.1))  # 45 deg step
+    assert not a.is_inside((1.55, 0, -29.95)) and a.is_inside((1.65, 0, -29.95))  # magnet d 3.2
+    assert not a.is_inside((0, 0, -27.95)) and a.is_inside((0, 0, -27.85))  # depth 2.1
     s = cp.hex_socket_cut(7.0, 0.15, 5.0, 5.5, 0.4)
     assert s.is_inside((0, 3.6, 7.0)) and not s.is_inside((0, 3.7, 7.0))
     assert s.is_inside((3.6 + 0.35, 0, 5.02))  # chamfered mouth

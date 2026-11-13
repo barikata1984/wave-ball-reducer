@@ -37,7 +37,7 @@ Assembly order:
     sun (herringbone cannot slide axially), phase marks outward; lower the carrier so its 3 pins
     go through the inner races and the small-gear bores;
   5 lower this cluster: the small gears slide into the ring (turn the cluster < 1 ring pitch to
-    find the mesh), the sun's hex socket slides onto the adapter hex and the sun's bottom face
+    find the mesh), the sun's hex boss drops into the adapter's hex socket and the sun's bottom face
     rests on the adapter's round seat (turn the rotor by hand);
   6 screw the cap on (clockwise from above) until its plate seats on the housing top; the
     arm's tooth clicks over the notches and blocks unscrewing. To open, lift the arm end.
@@ -118,6 +118,11 @@ class Params:
     motor_h: float = 23.25
     shaft_od: float = 15.0
     shaft_id: float = 12.6
+    # bottom plate under the hollow shaft: part of the rotor (turns with it); centre hole
+    # measured on the part (the drawing's d 5.7 is wrong); thickness is the drawing estimate
+    # (4.3 +- 0.45), not measured
+    rotor_hole_d: float = 9.5
+    rotor_plate_t: float = 4.3
     rotor_n: int = 4
     rotor_pcd: float = 25.0
     rotor_phase_deg: float = 0.0
@@ -133,9 +138,18 @@ class Params:
     head_h: float = 1.3  # ESCO ultra-low socket head M3 (head d assumed 5.5 = screw_head_d)
     head_gap: float = 0.5
     hex_af: float = 7.0
-    hex_engage: float = 5.0
+    hex_engage: float = 4.0  # sun boss into the adapter socket; floor 0.6 over the shaft top
     hex_clr: float = 0.15
-    hex_chamfer: float = 0.4  # 45 deg at the sun socket mouth (first layer squish)
+    hex_chamfer: float = 0.4  # 45 deg at the adapter socket mouth (first layer squish)
+    # adapter shaft: down through the motor to the base underside, magnet for an encoder below
+    # upper: near fit in the co-rotating hollow shaft (id 12.6); lower: snug centring fit in the
+    # co-rotating plate hole, running clearance in the stationary base hole; 45 deg step between
+    # them, ending enc_step_clr over the plate top
+    enc_shaft_d_upper: float = 12.4
+    enc_shaft_d_lower: float = 9.4
+    enc_step_clr: float = 0.5
+    magnet_d: float = 3.2
+    magnet_depth: float = 2.1
     sun_seat_r: float = 8.5  # adapter seat under the sun's bottom face (s0); hex only drives
     sun_shaft_r: float = 9.0
     gear_gap: float = 0.5  # small gear to lip, ring top to large gear
@@ -357,6 +371,14 @@ class Params:
         return self.adapter_r + 1.0
 
     @property
+    def enc_step_z(self) -> float:  # bottom of the shaft's 45 deg step
+        return -self.motor_h + self.rotor_plate_t + self.enc_step_clr
+
+    @property
+    def base_hole_r(self) -> float:  # base centre hole around the adapter shaft
+        return self.shaft_od / 2 + 0.5
+
+    @property
     def hex_sock(self) -> float:
         return (self.hex_af / 2 + self.hex_clr) / math.cos(math.pi / 6)
 
@@ -526,6 +548,18 @@ def design_warnings(p: Params) -> list[str]:
     w += [f"internal {k} interference" for k, v in internal_interference(p).items() if v]
     if p.sun_seat_r > min(p.sun_shaft_r, p.rotor_pcd / 2 - p.screw_head_d / 2 - p.slide_clr):
         w.append("adapter sun seat wider than the sun shaft or reaching the rotor screw heads")
+    if p.base_hole_r - p.enc_shaft_d_lower / 2 < 0.5:
+        w.append("adapter shaft within 0.5 mm of the base hole")
+    if p.enc_shaft_d_upper >= p.shaft_id or not p.enc_shaft_d_lower < min(
+        p.enc_shaft_d_upper, p.rotor_hole_d
+    ):
+        w.append("adapter shaft does not fit the hollow shaft")
+    if (p.enc_shaft_d_lower - p.magnet_d) / 2 < p.min_wall:
+        w.append("magnet hole wall under min_wall")
+    if p.hex_sock + p.hex_chamfer > p.sun_seat_r - p.min_wall or (
+        p.zs_["s0"] - p.hex_engage - p.gear_gap < p.min_wall / 2 - 1e-9
+    ):
+        w.append("adapter hex socket too close to the seat edge or the shaft top")
     if p.a - p.r_tip2 - p.sun_shaft_r < 1.0:
         w.append("sun shaft within 1 mm of the small gear tips")
     if p.b1 - B < p.bearing_shoulder + p.fit_clr + p.min_wall - 1e-9:
@@ -572,7 +606,7 @@ def design_warnings(p: Params) -> list[str]:
 def wall_thicknesses(p: Params) -> dict[str, float]:
     z = p.zs_
     return {
-        "sun shaft around hex socket": p.sun_shaft_r - p.hex_sock,
+        "adapter seat around hex socket": p.sun_seat_r - p.hex_sock - p.hex_chamfer,
         "planet small root to journal bore": p.r_root(p.m2, p.z2, p.x2) - p.journal_r,
         "planet large root to 608 seat": p.r_root(p.m1, p.z1, p.x1) - p.seat_r,
         "ring root to outside": p.R_body - p.r_ring_root,
@@ -594,7 +628,7 @@ def wall_thicknesses(p: Params) -> dict[str, float]:
         "cap plate": p.lid_t,
         "cap skirt": p.min_wall,
         "adapter around screw holes": p.adapter_r - p.rotor_pcd / 2 - p.m3_clear_d / 2,
-        "adapter boss around rotor screw heads": p.rotor_pcd / 2 - p.screw_head_d / 2 - p.hex_sock,
+        "magnet hole wall": (p.enc_shaft_d_lower - p.magnet_d) / 2,
         "base under counterbores": p.base_clamp,
         "base: centre hole to stator screw": p.stator_pcd / 2 - p.m3_clear_d / 2
         - (p.shaft_od / 2 + 0.5),
@@ -638,7 +672,8 @@ def size_stepped(p: Params) -> dict:
               "carrier_t": p.carrier_t, "lid rib + axial clr": p.lid_rib_h + p.lid_axial_clr,
               "lid_t": p.lid_t, "hub_stub": p.hub_stub}  # fmt: skip
     slack = {
-        "sun shaft - hex socket - min_wall": p.sun_shaft_r - p.hex_sock - p.min_wall,
+        "adapter seat - hex socket - min_wall": p.sun_seat_r - p.hex_sock - p.hex_chamfer
+        - p.min_wall,
         "small root - journal bore - min_wall": p.r_root(p.m2, p.z2, p.x2) - p.journal_r
         - p.min_wall,
         "large root - 608 seat - min_wall": p.r_root(p.m1, p.z1, p.x1) - p.seat_r - p.min_wall,
@@ -753,25 +788,26 @@ def make_parts(p: Params) -> dict[str, Part]:
     q1, q2 = p.mesh(1), p.mesh(2)
     parts: dict[str, Part] = {}
 
+    # motor as one solid: hollow-shaft bore (id) above the rotor's bottom plate, its hole below
+    zp = -p.motor_h + p.rotor_plate_t
     motor = Pos(0, 0, -p.motor_h) * Cylinder(p.motor_d / 2, p.motor_h, align=MIN)
-    motor += Pos(0, 0, -p.motor_h) * Cylinder(p.shaft_od / 2, p.motor_h, align=MIN)
-    parts["_motor_GM5208-24"] = motor - Pos(0, 0, -p.motor_h) * Cylinder(
-        p.shaft_id / 2, p.motor_h, align=MIN
-    )
+    motor -= Pos(0, 0, zp) * Cylinder(p.shaft_id / 2, -zp, align=MIN)
+    motor -= Pos(0, 0, -p.motor_h) * Cylinder(p.rotor_hole_d / 2, p.rotor_plate_t, align=MIN)
+    parts["_motor_GM5208-24"] = motor
 
-    parts["sun_adapter"] = cp.sun_adapter(p.adapter_r, p.adapter_t, p.sun_seat_r, z["s0"],
-                                          p.hex_af, z["s0"] + p.hex_engage, p.rotor_n,
-                                          p.rotor_pcd, p.m3_clear_d, p.rotor_phase_deg)  # fmt: skip
+    parts["sun_adapter"] = cp.sun_adapter(
+        p.adapter_r, p.adapter_t, p.sun_seat_r, z["s0"], p.hex_af, p.hex_clr,
+        p.hex_engage + p.gear_gap, p.hex_chamfer, p.rotor_n, p.rotor_pcd, p.m3_clear_d,
+        (p.enc_shaft_d_upper / 2, p.enc_shaft_d_lower / 2), p.enc_step_z, z["bottom"], p.magnet_d, p.magnet_depth, p.rotor_phase_deg)  # fmt: skip
 
-    # sun: herringbone teeth at the large-gear level on a shaft down to the adapter hex
+    # sun: herringbone teeth at the large-gear level on a shaft, hex boss down into the adapter
     sun = _herring(p, outline(q1, p.zs, half_thickness(q1, p.zs, p.xs), p.r_tip_sun,
                               p.r_root(p.m1, p.zs, p.xs)), q1.r(p.zs), 1)  # fmt: skip
     zt = z["L0"] - p.gear_gap
     # the L0 tooth section continued straight down to the shaft: no overhanging tooth bottoms
     sun += extrude(sun.faces().sort_by(Axis.Z)[0], p.gear_gap, (0, 0, -1))
     sun += Pos(0, 0, z["s0"]) * Cylinder(p.sun_shaft_r, zt - z["s0"], align=MIN)
-    parts["sun"] = sun - cp.hex_socket_cut(p.hex_af, p.hex_clr, z["s0"],
-                                           p.hex_engage + p.gear_gap, p.hex_chamfer)  # fmt: skip
+    parts["sun"] = sun + cp.hex_prism(p.hex_af, z["s0"] - p.hex_engage, p.hex_engage)
 
     # planet: spur small gear s0..L0 + herringbone large gear L0..L1, tooth 0 of both on +X;
     # 608 in the large end (seat cone, min_wall floor over L0), journal bore through both
@@ -813,7 +849,7 @@ def make_parts(p: Params) -> dict[str, Part]:
 
     # base: under the stator, screwed to it and to the housing from below
     base = Pos(0, 0, z["bottom"]) * Cylinder(p.R_body, p.base_t, align=MIN)
-    base -= Pos(0, 0, z["bottom"]) * Cylinder(p.shaft_od / 2 + 0.5, p.base_t, align=MIN)
+    base -= Pos(0, 0, z["bottom"]) * Cylinder(p.base_hole_r, p.base_t, align=MIN)
     cb = p.base_t - p.base_clamp
     for n, r in ((p.stator_n, p.stator_pcd / 2), (p.n_base_screws, p.base_screw_r)):
         base -= cp.ring_holes(n, r, p.m3_clear_d, z["bottom"], p.base_t, p.stator_phase_deg)
@@ -874,8 +910,10 @@ def pose(p: Params, home: dict[str, Part], psi: float) -> dict[str, Part]:
     return {k: move[k] * v if k in move else v for k, v in home.items()}
 
 
-# large face down; housing_lower on its lip top (the split face)
-PRINT_FLIP = {"lid", "carrier_output", "planet_0", "planet_1", "planet_2", "housing_lower"}
+# large face down; housing_lower on its lip top (the split face); sun on its top face (boss up);
+# sun_adapter on its seat face (shaft and magnet hole up, the disc ring needs support)
+PRINT_FLIP = {"lid", "carrier_output", "planet_0", "planet_1", "planet_2", "housing_lower",
+              "sun", "sun_adapter"}  # fmt: skip
 
 
 def print_pose(name: str, part: Part) -> Part:

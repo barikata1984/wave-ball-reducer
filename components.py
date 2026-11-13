@@ -22,6 +22,7 @@ from build123d import (
     Cylinder,
     Face,
     Part,
+    Plane,
     Polyline,
     Pos,
     RegularPolygon,
@@ -274,22 +275,40 @@ def sun_adapter(
     seat_r: float,
     seat_top: float,
     hex_af: float,
-    hex_top: float,
+    hex_clr: float,
+    hex_depth: float,
+    chamfer: float,
     n_screws: int,
     pcd: float,
     clear_d: float,
+    shaft_r: tuple[float, float],
+    shaft_step: float,
+    shaft_bottom: float,
+    magnet_d: float,
+    magnet_depth: float,
     phase_deg: float = 0.0,
 ) -> Part:
-    """Adapter screwed to a rotor face at z = 0: disc r x t, round seat, hex drive.
+    """Adapter screwed to a rotor face at z = 0: disc r x t, round seat, hex socket, shaft.
 
-    The round seat (radius seat_r, top at seat_top) carries the sun's bottom face, so the hex
-    (across flats hex_af, up to hex_top) only turns the sun. Screw holes clear_d on pcd from
-    the disc top (heads sit on the disc; the seat must stay inside the head circle).
-    Prints disc-down without support.
+    The round seat (radius seat_r, top at seat_top) carries the sun's bottom face; the hex
+    socket (hex_socket_cut, mouth at seat_top, hex_depth down) takes the sun's hex boss and only
+    turns it. Screw holes clear_d on pcd from the disc top (the seat must stay inside the head
+    circle). The shaft (radii shaft_r = (upper, lower)) runs from z = 0 down to shaft_bottom (< 0):
+    the upper radius down to a 45 deg cone that ends at shaft_step, the lower radius below that.
+    A blind magnet hole magnet_d x magnet_depth is in its bottom face.
+    Prints upside down on the seat face: shaft and magnet hole upright, socket mouth on the bed.
     """
     adapter = Cylinder(r, t, align=MIN)
     adapter += Pos(0, 0, t) * Cylinder(seat_r, seat_top - t, align=MIN)
-    adapter += hex_prism(hex_af, t, hex_top - t)
+    ru, rl = shaft_r
+    zc = shaft_step + ru - rl  # cone top
+    adapter += Pos(0, 0, zc) * Cylinder(ru, -zc, align=MIN)
+    adapter += Pos(0, 0, shaft_step) * Cone(rl, ru, ru - rl, align=MIN)
+    adapter += Pos(0, 0, shaft_bottom) * Cylinder(rl, shaft_step - shaft_bottom, align=MIN)
+    adapter -= Pos(0, 0, seat_top) * hex_socket_cut(hex_af, hex_clr, 0, hex_depth, chamfer).mirror(
+        Plane.XY
+    )
+    adapter -= Pos(0, 0, shaft_bottom) * Cylinder(magnet_d / 2, magnet_depth, align=MIN)
     return adapter - ring_holes(n_screws, pcd / 2, clear_d, 0, t, phase_deg)
 
 

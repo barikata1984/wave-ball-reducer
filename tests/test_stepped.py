@@ -35,6 +35,9 @@ CLUSTER = ("sun", "planet_0", "planet_1", "planet_2", "_bearing_608ZZ_0", "_bear
            "_bearing_608ZZ_2", "carrier_output")  # fmt: skip
 # widest flat ceiling allowed per part in print pose [mm]; the planets bridge the floor under
 # the 608 seat (a ring round the journal bore, outer d = seat d - 2 x cone)
+# printed with support: the adapter's disc ring 1.8 mm over the bed, the sun's step from the
+# tooth roots to its shaft
+SUPPORTED = {"sun", "sun_adapter"}
 BRIDGE_MAX = {"planet_0": 20.5, "planet_1": 20.5, "planet_2": 20.5}
 
 
@@ -170,19 +173,29 @@ def test_planet_pin_and_608(home):
 
 
 def test_axial_support(home):
-    """Sun bottom face rests on the adapter seat; the hex tip clears the socket ceiling."""
+    """Sun bottom face rests on the adapter seat; the sun's hex boss sits in the adapter socket
+    with hex_clr per side and clears the socket floor by gear_gap."""
     p, z = Params(), Params().zs_
     sun, adapter = home["sun"], home["sun_adapter"]
-    assert sun.bounding_box().min.Z == pytest.approx(z["s0"])
-    r = (p.sun_seat_r + p.hex_af / 2 + p.hex_clr + p.hex_chamfer) / 2  # inside the contact ring
+    r = (p.sun_seat_r + p.hex_sock + p.hex_chamfer) / 2  # inside the contact ring
     assert adapter.is_inside((r, 0, z["s0"] - 0.05))
     assert not adapter.is_inside((r, 0, z["s0"] + 0.05))
     assert sun.is_inside((r, 0, z["s0"] + 0.05))
     assert not adapter.is_inside((p.sun_seat_r + 0.1, 0, z["s0"] - 0.05))
-    tip = z["s0"] + p.hex_engage
-    assert adapter.bounding_box().max.Z == pytest.approx(tip)
-    assert not sun.is_inside((0, 0, tip + p.gear_gap - 0.05))
-    assert sun.is_inside((0, 0, tip + p.gear_gap + 0.05))
+    # boss on the sun (across flats hex_af), socket in the adapter (hex_af + 2 hex_clr)
+    tip = z["s0"] - p.hex_engage
+    assert sun.bounding_box().min.Z == pytest.approx(tip)
+    zm = tip + 1.0
+    assert sun.is_inside((0, p.hex_af / 2 - 0.02, zm)) and not sun.is_inside(
+        (0, p.hex_af / 2 + 0.02, zm)
+    )
+    f = p.hex_af / 2 + p.hex_clr
+    assert not adapter.is_inside((0, f - 0.02, zm)) and adapter.is_inside((0, f + 0.02, zm))
+    floor = tip - p.gear_gap
+    assert not adapter.is_inside((0, 2.0, floor + 0.05)) and adapter.is_inside(
+        (0, 2.0, floor - 0.05)
+    )
+    assert vol(sun, adapter) < 1e-3
     assert any("sun seat" in w for w in design_warnings(Params(sun_seat_r=9.5)))
     # planets over the lip with gear_gap; pins end over it as well
     assert z["s0"] - p.lip_top == pytest.approx(p.gear_gap)
@@ -200,6 +213,48 @@ def test_no_interference_and_tooth_gap(home, k, psi):
     assert 0 < g_sun < GAP_MAX, g_sun
     g_ring = gear_gap(parts["housing_upper"], planet, c, p.r_tip2, p.r_ring_tip, ring=True)
     assert 0 < g_ring < GAP_MAX, g_ring
+
+
+def test_adapter_shaft_and_magnet(home):
+    """Shaft from the adapter down to flush with the base underside, running clearance to the
+    co-rotating plate hole and hollow shaft, the stationary base hole; magnet hole at the bottom."""
+    p, z = Params(), Params().zs_
+    adapter, motor, base = home["sun_adapter"], home["_motor_GM5208-24"], home["base"]
+    assert adapter.bounding_box().min.Z == pytest.approx(z["bottom"])
+    assert base.bounding_box().min.Z == pytest.approx(z["bottom"])
+    ru, rl = p.enc_shaft_d_upper / 2, p.enc_shaft_d_lower / 2
+    for zz, r in ((-0.5, ru), (-10.0, ru), (p.enc_step_z - 0.5, rl), (z["bottom"] + 2.5, rl)):
+        assert adapter.is_inside((r - 0.02, 0, zz)) and not adapter.is_inside((r + 0.02, 0, zz))
+    # 45 deg step entirely above the (rotor) plate top by enc_step_clr
+    zp = z["base_top"] + p.rotor_plate_t
+    assert p.enc_step_z - zp == pytest.approx(p.enc_step_clr) and p.enc_step_clr > 0
+    assert not adapter.is_inside(((ru + rl) / 2, 0, p.enc_step_z + (ru - rl) / 2 - 0.1))
+    # near fits in the co-rotating hollow shaft and plate hole; >= 0.5 to the stationary base
+    assert 0 < p.shaft_id / 2 - ru <= 0.15 and 0 < p.rotor_hole_d / 2 - rl <= 0.1
+    assert p.base_hole_r - rl >= 0.5
+    assert motor.is_inside((p.rotor_hole_d / 2 + 0.05, 0, zp - 1.0))
+    assert not motor.is_inside((p.rotor_hole_d / 2 - 0.05, 0, zp - 1.0))
+    for psi in (0.0, 1.3):
+        a = pose(p, home, psi)["sun_adapter"]
+        assert vol(a, motor) < 1e-3 and vol(a, base) < 1e-3
+    # assembly: the adapter goes in from above; each section is narrower than every bore above
+    # the place it ends up, so lowering it from 30 mm up never touches the motor
+    for dz in (5.0, 15.0, 30.0):
+        assert vol(Pos(0, 0, dz) * adapter, motor) < 1e-3, dz
+    # a shaft too fat for the plate hole hits it and warns
+    fat = Pos(0, 0, z["bottom"]) * Cylinder(p.rotor_hole_d / 2 + 0.1, 10, align=MIN)
+    assert vol(fat, motor) > 1e-3
+    assert any("hollow shaft" in w for w in design_warnings(Params(enc_shaft_d_lower=9.6)))
+    assert any("base hole" in w for w in design_warnings(Params(shaft_od=9.0)))
+    # magnet: blind hole magnet_d x magnet_depth, centred in the bottom face
+    zb = z["bottom"]
+    r = p.magnet_d / 2
+    assert not adapter.is_inside((r - 0.02, 0, zb + 0.05)) and adapter.is_inside(
+        (r + 0.02, 0, zb + 0.05)
+    )
+    assert not adapter.is_inside((0, 0, zb + p.magnet_depth - 0.05))
+    assert adapter.is_inside((0, 0, zb + p.magnet_depth + 0.05))
+    assert (p.magnet_d, p.magnet_depth) == (3.2, 2.1)
 
 
 def test_fixed_parts(home):
@@ -358,13 +413,32 @@ def _steep_area(part):
     return steep
 
 
-@pytest.mark.parametrize("name", sorted(PRINTED))
+@pytest.mark.parametrize("name", sorted(PRINTED - SUPPORTED))
 def test_print_without_support(home, name):
     """Print pose: no face flatter than 45 deg facing down; flat ceilings only as bridges no
     wider than 8.5 mm (socket and hole ends), the planets' 608 floor up to BRIDGE_MAX."""
     part = print_pose(name, home[name])
     assert _steep_area(part) < 0.1
     assert max_bridge(part) <= BRIDGE_MAX.get(name, 8.5), max_bridge(part)
+
+
+def test_sun_and_adapter_print_pose(home):
+    """Both print flipped: sun on its top face (boss up), adapter on its seat face with the
+    socket mouth on the bed and the shaft standing up, magnet hole open at the top."""
+    p = Params()
+    assert {"sun", "sun_adapter"} <= PRINT_FLIP
+    a = print_pose("sun_adapter", home["sun_adapter"])
+    top = a.bounding_box().max.Z
+    assert top == pytest.approx(p.zs_["s0"] - p.zs_["bottom"])
+    assert not a.is_inside((0, 0, top - 0.05)) and a.is_inside(
+        (p.enc_shaft_d_lower / 2 - 0.1, 0, top - 0.05)
+    )
+    # downward faces: only the disc ring (support) and the socket floor (hex bridge)
+    down = [f for f in a.faces() if f.geom_type == GeomType.PLANE and f.bounding_box().min.Z > 1e-6
+            and f.normal_at().Z < -0.999]  # fmt: skip
+    assert len(down) == 2
+    sun = print_pose("sun", home["sun"])
+    assert _steep_area(sun) < 0.1
 
 
 def test_housing_split_fit(home):
