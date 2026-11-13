@@ -25,7 +25,7 @@ from stepped import (
 )
 
 PRINTED = {"sun_adapter", "sun", "planet_0", "planet_1", "planet_2", "carrier_output",
-           "housing_upper", "housing_lower", "base", "lid"}  # fmt: skip
+           "housing_upper", "housing_lower", "base", "lid", "pin_link"}  # fmt: skip
 
 
 def gear_gap(gear, planet, c: complex, r_gear_side: float, r_planet_side: float, ring: bool):
@@ -94,7 +94,7 @@ def test_bearing_and_pin_fit(home):
     for zz in (z["s0"] + B / 2, z["L1"] - B / 2):
         assert not planet.is_inside((c.real + D / 2 + p.fit_clr / 2, c.imag, zz))
         assert planet.is_inside((c.real + D / 2 + p.fit_clr + 0.3, c.imag, zz))
-    assert p.pin_socket >= 8.0
+    assert p.pin_socket >= p.pin_socket_min - 1e-9
     carrier = home["carrier_output"]
     zc = z["L1"] + p.pin_socket - 0.5
     assert not carrier.is_inside((c.real + p.pin_socket_d / 2 - 0.1, c.imag, zc))
@@ -102,9 +102,9 @@ def test_bearing_and_pin_fit(home):
     # shoulder bolt: Ø5 shoulder s0 .. socket bottom, head below, M4 end in the tapped hole
     bb = home["_pin_shoulder_bolt_5x30_0"].bounding_box()
     assert bb.size.X == pytest.approx(p.pin_head_d)
-    assert bb.min.Z == pytest.approx(z["s0"] - p.pin_head_gap - p.pin_head_h)
+    assert bb.min.Z == pytest.approx(p.head_top - p.pin_head_h)
     assert bb.max.Z == pytest.approx(z["L1"] + p.pin_socket + p.pin_thread_len)
-    assert z["s0"] - p.pin_head_gap + p.pin_len == pytest.approx(z["L1"] + p.pin_socket)
+    assert p.head_top + p.pin_len == pytest.approx(z["L1"] + p.pin_socket)
     zt = z["L1"] + p.pin_socket + 1
     assert not carrier.is_inside((c.real + p.pin_tap_d / 2 - 0.1, c.imag, zt))
     assert carrier.is_inside((c.real + p.pin_tap_d / 2 + 0.3, c.imag, zt))
@@ -130,10 +130,8 @@ def test_axial_support(home):
     assert any("sun seat" in w for w in design_warnings(Params(sun_seat_r=9.5)))
     c = planet_states(p, 0.0)[0][0]
     head = home["_pin_shoulder_bolt_5x30_0"]
-    assert head.is_inside(
-        (c.real + p.pin_head_d / 2 - 0.1, c.imag, z["s0"] - p.pin_head_gap - 0.05)
-    )
-    assert not head.is_inside((c.real + 3.0, c.imag, z["s0"] - p.pin_head_gap + 0.05))
+    assert head.is_inside((c.real + p.pin_head_d / 2 - 0.1, c.imag, p.head_top - 0.05))
+    assert not head.is_inside((c.real + 3.0, c.imag, p.head_top + 0.05))
     carrier, zs = home["carrier_output"], z["L1"] + p.seat_gap
     assert p.seat_d <= 6.2 and p.seat_gap > 0 and p.pin_head_gap > 0
     assert carrier.is_inside((c.real + p.seat_d / 2 - 0.1, c.imag, zs + 0.05))
@@ -366,7 +364,7 @@ def test_assembly_order(home):
     assert p.lip_r > p.adapter_r and up.bounding_box().min.Z >= 0
     motor = home["_motor_GM5208-24"]
     for n in (n for n in home if n != "housing_upper"):
-        if n.startswith(("planet", "_bearing", "_pin", "carrier", "sun", "lid")):
+        if n.startswith(("planet", "_bearing", "_pin", "pin_link", "carrier", "sun", "lid")):
             continue  # cluster and lid go in after the upper is screwed down
         assert (up & home[n]).volume < 1e-3, n
     assert (lo & motor).volume < 1e-3
@@ -375,6 +373,54 @@ def test_assembly_order(home):
         assert (lo & (Pos(0, 0, dz) * up)).volume < 1e-3, dz
     # ultra-low rotor screw heads: s0 now set by the lip + shoulder-bolt-head stack
     assert z["s0"] == pytest.approx(
-        p.motor_top_clr + p.min_wall + p.gear_gap + p.pin_head_h + p.pin_head_gap
+        p.motor_top_clr + p.min_wall + p.gear_gap + p.pin_head_h + p.link_t + p.pin_head_gap
     )
     assert z["s0"] >= p.adapter_t + p.head_h + p.head_gap
+
+
+def test_pin_link(home):
+    """Link hangs on the 3 bolt heads, fits the shoulders, clears everything that turns against
+    it, and goes in with the cluster through the ring bore."""
+    p, z = Params(), Params().zs_
+    link = home["pin_link"]
+    d = BEARINGS[p.bearing][0]
+    r0, r1 = p.link_r
+    bb = link.bounding_box()
+    assert bb.min.Z == pytest.approx(p.head_top) and bb.size.Z == pytest.approx(p.link_t)
+    assert p.link_t >= p.min_wall
+    for k, (c, _) in enumerate(planet_states(p, 0.0)):
+        head = home[f"_pin_shoulder_bolt_5x30_{k}"]
+        u = c / abs(c)
+        # hole: shoulder d + 2 slide_clr; link rests on the head top (touching, no overlap)
+        for r, inside in ((d / 2 + p.slide_clr - 0.02, False), (d / 2 + p.slide_clr + 0.02, True)):
+            q = c + r * u * 1j
+            assert link.is_inside((q.real, q.imag, p.head_top + p.link_t / 2)) is inside
+        q = c + 3.5 * u * 1j
+        assert head.is_inside((q.real, q.imag, p.head_top - 0.05))
+        assert link.is_inside((q.real, q.imag, p.head_top + 0.05))
+        assert (link & head).volume < 1e-3
+    # axial gaps: link top to the planets / small bearings, heads to the housing lip
+    zt = p.head_top + p.link_t
+    assert z["s0"] - zt == pytest.approx(p.pin_head_gap)
+    assert p.head_top - p.pin_head_h - p.lip_top == pytest.approx(p.gear_gap)
+    # radial gaps: adapter (+ rotor screw heads) inside, housing ring bore outside
+    assert r0 - p.adapter_r >= p.gear_gap and p.r_ring_tip - r1 >= p.gear_gap
+    assert p.head_top >= p.adapter_t + p.head_h + p.gear_gap  # above the rotor screw heads
+    h = home["housing_upper"]
+    for a in np.linspace(0, 2 * math.pi, 7):
+        rr = r1 + p.gear_gap
+        assert not h.is_inside((rr * math.cos(a), rr * math.sin(a), zt - 0.05))
+    # nothing that turns against the link comes within gear_gap of it (any input angle)
+    for psi in (0.0, 1.3, 3.1):
+        parts = pose(p, home, psi)
+        turning = ["sun", "sun_adapter", "housing_upper", "planet_0", "planet_1", "planet_2"]
+        turning += [n for n in parts if n.startswith("_bearing") and "_small_" in n]
+        for n in turning:
+            for dz in (p.gear_gap - 0.05, -(p.gear_gap - 0.05)):
+                assert (Pos(0, 0, dz) * parts["pin_link"] & parts[n]).volume < 1e-3, (n, psi, dz)
+        # ... and moved by just over gear_gap it does meet the planets' bearings
+        moved = Pos(0, 0, p.gear_gap + 0.05) * parts["pin_link"]
+        assert any((moved & parts[n]).volume > 1e-3 for n in turning)
+    # the cluster (link included) passes the ring bore from above
+    assert r1 < p.r_ring_tip
+    assert any("pin link" in w for w in design_warnings(Params(link_w=14.0)))

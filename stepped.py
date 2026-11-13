@@ -30,9 +30,11 @@ Assembly order:
     put housing_upper on its spigot, screw it down from inside (4 M3x12 through the counterbores
     in the ring-top face; the large gears are not in yet);
   4 press 685ZZ into both ends of each planet; mesh the 3 planets radially around the sun
-    (herringbone cannot slide axially), phase marks outward; put the carrier on top and push
-    each Ø5 shoulder bolt up through both bearings into the carrier, screw its M4 end into the
-    tapped hole above the socket (dowel alternative: pins pressed into the carrier first);
+    (herringbone cannot slide axially), phase marks outward; put the carrier on top, thread
+    the 3 Ø5 shoulder bolts through the pin_link (heads below it), push bolts + link up through
+    both bearings into the carrier and screw each M4 end into the tapped hole above the socket
+    (hex key from below, the link sits on the head tops) (dowel alternative: pins pressed into
+    the carrier first, no link);
   5 lower this cluster: the small gears slide into the ring (turn the cluster < 1 ring pitch to
     find the mesh), the sun's hex socket slides onto the adapter hex and the sun's bottom face
     rests on the adapter's round seat, which carries sun + planets (turn the rotor by hand);
@@ -176,13 +178,17 @@ class Params:
     pin_len: float = 30.0  # shoulder (or dowel) length, s0 .. socket bottom
     pin_head_d: float = 8.0  # socket head of a Ø5/M4 shoulder bolt (vendor tables: 8-9)
     pin_head_h: float = 3.0  # AliExpress d5/M4 shoulder bolts: head 3 mm
-    pin_head_gap: float = 0.5  # head top to the small bearing: the head touches nothing
+    pin_head_gap: float = 0.5  # link top to the small bearing: link and head touch nothing turning
+    # pin link: flat printed ring on the three bolt heads (hung on them, Ø5 holes on the shoulders)
+    # joining the free bolt ends; it turns with the carrier. Carries the radial load share only.
+    link_t: float = 1.2  # = min_wall; adds link_t to the height and takes it off the socket
+    link_w: float = 10.0  # radial, centred on a: covers Ø9 heads, 0.9 off the adapter
     seat_d: float = 6.0  # carrier seat on the large inner race (685 inner-race face <= 6.2)
     seat_gap: float = 0.25  # seat to the large inner race; the sun sits on the adapter seat
     pin_thread_len: float = 5.0  # vendor tables: 4.5-5
     pin_tap_d: float = 3.3  # M4 tap drill; tapped in the print
     pin_socket_d: float = 5.0  # dowel: printed holes come out undersize -> press fit; tune
-    pin_socket_min: float = 8.0
+    pin_socket_min: float = 6.8  # 8 before the pin link (bolt length 30 stays); see README
     # screw-on lid: internal thread cut 0.8 into the shell (= shell_margin, min_wall stays behind
     # it), 45 deg flanks (90 deg included) print without support; the lid stops on the housing top
     thread_pitch: float = 2.0
@@ -329,7 +335,7 @@ class Params:
         # sun side: adapter + rotor screw heads; planet side: lip + bolt heads under the planets
         s0 = max(self.adapter_t + self.head_h + self.head_gap,
                  self.motor_top_clr + self.min_wall + self.gear_gap + self.pin_head_h
-                 + self.pin_head_gap)  # fmt: skip
+                 + self.link_t + self.pin_head_gap)  # fmt: skip
         s1 = s0 + self.b2
         L0 = s1 + self.gear_gap
         L1 = L0 + self.b1
@@ -355,13 +361,20 @@ class Params:
 
     @property
     def lip_top(self) -> float:  # under the shoulder-bolt heads, gear_gap below them
-        return self.zs_["s0"] - self.pin_head_gap - self.pin_head_h - self.gear_gap
+        return self.head_top - self.pin_head_h - self.gear_gap
+
+    @property
+    def head_top(self) -> float:  # shoulder-bolt head top = pin link underside
+        return self.zs_["s0"] - self.pin_head_gap - self.link_t
+
+    @property
+    def link_r(self) -> tuple[float, float]:
+        return self.a - self.link_w / 2, self.a + self.link_w / 2
 
     @property
     def pin_socket(self) -> float:
-        """Pin from pin_head_gap below the planet bottom (s0) up into the carrier; depth from the boss bottom."""
-        z = self.zs_
-        return self.pin_len - (z["L1"] - z["s0"] + self.pin_head_gap)
+        """Pin from the head top (under the link) up into the carrier; depth from the boss bottom."""
+        return self.pin_len - (self.zs_["L1"] - self.head_top)
 
     @property
     def spigot_r(self) -> tuple[float, float]:
@@ -462,6 +475,11 @@ def design_warnings(p: Params) -> list[str]:
         w.append("adapter sun seat wider than the sun shaft or reaching the rotor screw heads")
     if p.a - p.r_tip2 - p.sun_shaft_r < 1.0:
         w.append("sun shaft within 1 mm of the small gear tips")
+    r0, r1 = p.link_r
+    if r0 < p.adapter_r + p.gear_gap or r1 > p.r_ring_tip - p.gear_gap:
+        w.append("pin link within gear_gap of the adapter or the ring bore")
+    if r0 > p.a - p.pin_head_d / 2 or r1 < p.a + p.pin_head_d / 2:
+        w.append("pin link narrower than the bolt heads")
     if p.lip_top < p.motor_top_clr + p.min_wall - 1e-9:
         w.append("housing lip under the bolt heads thinner than min_wall")
     if p.zs_["L1"] + p.pin_socket + p.pin_thread_len + 1 > p.zs_["out"] - p.min_wall:
@@ -724,6 +742,9 @@ def make_parts(p: Params) -> dict[str, Part]:
     carrier += Pos(0, 0, zh) * Cylinder(p.hub_r, z["out"] - zh, align=MIN)
     carrier -= _ring_holes(p.n_out_holes, p.hub_r / 2, p.m3_tap_d, z["out"] - 8, 8)
     pin = f"_pin_{p.pin_kind}_5x{p.pin_len:g}"
+    r0, r1 = p.link_r
+    link = Pos(0, 0, p.head_top) * (Cylinder(r1, p.link_t, align=MIN)
+                                    - Cylinder(r0, p.link_t, align=MIN))  # fmt: skip
     shank = Cylinder(d / 2, p.pin_len, align=MIN)
     if p.pin_kind == "shoulder_bolt":
         shank += Pos(0, 0, -p.pin_head_h) * Cylinder(p.pin_head_d / 2, p.pin_head_h, align=MIN)
@@ -737,7 +758,8 @@ def make_parts(p: Params) -> dict[str, Part]:
             parts[f"_bearing_{p.bearing}_{tag}_{k}"] = Pos(x, y, zb) * (
                 Cylinder(D / 2, B, align=MIN) - Cylinder(d / 2, B, align=MIN)
             )
-        parts[f"{pin}_{k}"] = Pos(x, y, z["s0"] - p.pin_head_gap) * shank
+        parts[f"{pin}_{k}"] = Pos(x, y, p.head_top) * shank
+        link -= Pos(x, y, p.head_top) * Cylinder(d / 2 + p.slide_clr, p.link_t, align=MIN)
         carrier += Pos(x, y, z["L1"] + p.seat_gap) * Cylinder(
             p.shoulder_r, p.carrier_gap - p.seat_gap, align=MIN
         )
@@ -746,6 +768,7 @@ def make_parts(p: Params) -> dict[str, Part]:
             p.pin_tap_d / 2, p.pin_thread_len + 1, align=MIN
         )
     parts["carrier_output"] = carrier
+    parts["pin_link"] = link
 
     # base: under the stator, screwed to it and to the housing from below
     base = Pos(0, 0, z["bottom"]) * Cylinder(p.R_body, p.base_t, align=MIN)
@@ -826,7 +849,8 @@ def pose(p: Params, home: dict[str, Part], psi: float) -> dict[str, Part]:
     """Sun at angle psi [rad] (ring fixed, carrier psi/ratio)."""
     rot = Location((0, 0, 0), (0, 0, math.degrees(psi)))
     move = {"sun": rot, "sun_adapter": rot,
-            "carrier_output": Location((0, 0, 0), (0, 0, math.degrees(psi / p.ratio)))}  # fmt: skip
+            "carrier_output": Location((0, 0, 0), (0, 0, math.degrees(psi / p.ratio))),
+            "pin_link": Location((0, 0, 0), (0, 0, math.degrees(psi / p.ratio)))}  # fmt: skip
     for k, ((c0, t0), (c, t)) in enumerate(zip(planet_states(p, 0.0), planet_states(p, psi))):
         move[f"planet_{k}"] = (Pos(c.real, c.imag, 0)
                                * Location((0, 0, 0), (0, 0, math.degrees(t - t0)))
