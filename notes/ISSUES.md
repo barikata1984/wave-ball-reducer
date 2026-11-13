@@ -8,5 +8,7 @@
 - 太陽歯車の歯先を 0.1mm 削ったことによるかみ合い率の低下を計算していない ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
 - Chrome から 127.0.0.1:8765 のローカルビューワーに接続できない (原因未調査) ([議事録](logs/2026-11-10_parametric-ball-reducer-model.md))
 - 3D プリントの段付き遊星は実測効率が計算より大きく下がった例がある (COMPAct: 約 60% / 計算 94%)。逆駆動性への影響が未確認 ([議事録](logs/2026-11-13_planetary-fixes-and-stepped-reducer.md))
-- 段付き遊星の差込み式の蓋に回り止めがない ([議事録](logs/2026-11-13_planetary-fixes-and-stepped-reducer.md))
 - 段付き遊星の段付きボルトはキャリアの印刷品に直接ねじ込む。保持力が未確認 ([議事録](logs/2026-11-13_planetary-fixes-and-stepped-reducer.md))
+- ロータ上面のねじ穴の深さ (板厚約 3.2mm) は図面の画素読み取り (誤差 ±0.45mm) で、M3×6 の先端までの余裕は 0.5mm しかない。穴は貫通で、奥にステータの巻線がある ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
+- 段付き遊星のハウジング上部を外すには、先にふたと遊星の組を外す必要がある (結合ボルトが遊星の下に隠れる) ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
+- 段付き遊星のふたは、ラチェットの腕の下 (約 40°) でねじ山が一部削られ、かかりが減っている ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
