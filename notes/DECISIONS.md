@@ -36,7 +36,7 @@
 - 2026-11-13 段付き遊星の蓋は差込み式で試作する / 却下: 貫通ねじ、半径方向のねじ — エージェント判断 ([議事録](logs/2026-11-13_planetary-fixes-and-stepped-reducer.md))。2026-11-13 更新: ねじ込み式と印刷のラチェットに置き換え ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
 - 2026-11-13 段付きボルトは AliExpress の頭 3 mm、直径 5 mm 部 30 mm の品とし、ねじ部を 5 mm に切り詰める / 却下: ねじ 8 mm のまま、出力面まで貫通 — エージェント判断 ([議事録](logs/2026-11-13_planetary-fixes-and-stepped-reducer.md))。2026-11-13 更新: 案 2b で廃止 ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
 - 2026-11-13 歯元応力の上限は文献調査を先に行い、材料は PETG、PETG-CF/GF、PLA-CF/GF に絞る / 却下: 有限要素法の強度計算を先にする — ユーザー確認済み ([議事録](logs/2026-11-13_planetary-fixes-and-stepped-reducer.md))
-- 2026-11-13 上限の確認は、組み上げた減速機に設計トルクを繰り返しかける疲労試験で行う / 却下: 単体歯車の静的破壊試験 — ユーザー確認済み ([議事録](logs/2026-11-13_planetary-fixes-and-stepped-reducer.md))
+- 2026-11-13 上限の確認は、組み上げた減速機に設計トルクを繰り返しかける疲労試験で行う / 却下: 単体歯車の静的破壊試験 — ユーザー確認済み ([議事録](logs/2026-11-13_planetary-fixes-and-stepped-reducer.md))。2026-11-13 更新: 応力で寸法を決めない方針になったため廃止 (ユーザー確認済み)
 - 2026-11-13 減速機は遊星歯車式を主にする — ユーザー確認済み ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
 - 2026-11-13 歯元応力の許容値は 10 MPa のまま進める / 却下: 文献推奨の 6 MPa に下げる — ユーザー確認済み ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))。2026-11-13 更新: 応力で寸法を決めない方針に置き換え ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
 - 2026-11-13 段付き遊星の薄型化は、手持ちの M3 キャップボルトのまま板を薄くして行う / 却下: ボタンボルトに替える — ユーザー確認済み ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
