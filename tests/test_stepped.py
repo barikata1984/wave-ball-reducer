@@ -112,7 +112,7 @@ def test_size_matches_model(home):
         assert max(bb.size.X, bb.size.Y) <= s["D_body"] + 0.01, n
     bb = home["lid"].bounding_box()
     assert max(bb.size.X, bb.size.Y) == pytest.approx(s["D_max"], abs=0.01)
-    lo = min(v.bounding_box().min.Z for v in home.values())
+    lo = min(v.bounding_box().min.Z for n, v in home.items() if n != "_encoder_MT6701")
     hi = max(v.bounding_box().max.Z for v in home.values())
     assert lo == pytest.approx(z["bottom"]) and hi == pytest.approx(z["out"])
     assert hi - lo == pytest.approx(s["height"])
@@ -216,14 +216,20 @@ def test_no_interference_and_tooth_gap(home, k, psi):
 
 
 def test_adapter_shaft_and_magnet(home):
-    """Shaft from the adapter down to flush with the base underside, running clearance to the
+    """Shaft from the adapter down to sensor_gap over the encoder package, running clearance to the
     co-rotating plate hole and hollow shaft, the stationary base hole; magnet hole at the bottom."""
     p, z = Params(), Params().zs_
     adapter, motor, base = home["sun_adapter"], home["_motor_GM5208-24"], home["base"]
-    assert adapter.bounding_box().min.Z == pytest.approx(z["bottom"])
+    assert adapter.bounding_box().min.Z == pytest.approx(p.enc_shaft_bottom)
+    assert p.enc_shaft_bottom == pytest.approx(p.board_top + p.sensor_h + p.sensor_gap)
     assert base.bounding_box().min.Z == pytest.approx(z["bottom"])
     ru, rl = p.enc_shaft_d_upper / 2, p.enc_shaft_d_lower / 2
-    for zz, r in ((-0.5, ru), (-10.0, ru), (p.enc_step_z - 0.5, rl), (z["bottom"] + 2.5, rl)):
+    for zz, r in (
+        (-0.5, ru),
+        (-10.0, ru),
+        (p.enc_step_z - 0.5, rl),
+        (p.enc_shaft_bottom + 2.5, rl),
+    ):
         assert adapter.is_inside((r - 0.02, 0, zz)) and not adapter.is_inside((r + 0.02, 0, zz))
     # 45 deg step entirely above the (rotor) plate top by enc_step_clr
     zp = z["base_top"] + p.rotor_plate_t
@@ -247,14 +253,35 @@ def test_adapter_shaft_and_magnet(home):
     assert any("hollow shaft" in w for w in design_warnings(Params(enc_shaft_d_lower=9.6)))
     assert any("base hole" in w for w in design_warnings(Params(shaft_od=9.0)))
     # magnet: blind hole magnet_d x magnet_depth, centred in the bottom face
-    zb = z["bottom"]
+    zb = p.enc_shaft_bottom
     r = p.magnet_d / 2
     assert not adapter.is_inside((r - 0.02, 0, zb + 0.05)) and adapter.is_inside(
         (r + 0.02, 0, zb + 0.05)
     )
     assert not adapter.is_inside((0, 0, zb + p.magnet_depth - 0.05))
     assert adapter.is_inside((0, 0, zb + p.magnet_depth + 0.05))
-    assert (p.magnet_d, p.magnet_depth) == (3.2, 2.1)
+    assert (p.magnet_d, p.magnet_depth) == (4.2, 2.1)
+
+
+def test_encoder_board_mount(home):
+    """Board pocket 22.4 square x board_recess, corner pads, blind M2 pilots 0.3 under the base
+    top, component cavity with a floor left; the placeholder board fits without overlap."""
+    p, z = Params(), Params().zs_
+    base, zb = home["base"], z["bottom"]
+    h = p.board_w / 2 + p.board_clr
+    assert not base.is_inside((h - 0.05, 0, zb + 0.1)) and base.is_inside((h + 0.05, 0, zb + 0.1))
+    assert base.is_inside((8 + 2.0, 8, zb + p.board_recess + 0.05))  # pad face
+    assert not base.is_inside((8 + 2.0, 8, zb + p.board_recess - 0.05))
+    tip = p.board_top - p.board_t + p.board_screw_len
+    assert z["base_top"] - tip == pytest.approx(0.3)
+    assert not base.is_inside((8, 8, tip - 0.05)) and base.is_inside((8, 8, tip + 0.05))
+    top = p.board_top + p.comp_h + p.comp_clr
+    assert not base.is_inside((0, 10, top - 0.05)) and base.is_inside((0, 10, top + 0.05))
+    assert top < z["base_top"]
+    assert vol(home["_encoder_MT6701"], base) < 1e-3
+    assert any("M2x6" in w for w in design_warnings(Params(board_screw_len=6)))
+    assert any("cavity" in w for w in design_warnings(Params(board_recess=1.3)))
+    assert any("2.0" in w for w in design_warnings(Params(sensor_gap=2.5)))
 
 
 def test_fixed_parts(home):
@@ -429,7 +456,7 @@ def test_sun_and_adapter_print_pose(home):
     assert {"sun", "sun_adapter"} <= PRINT_FLIP
     a = print_pose("sun_adapter", home["sun_adapter"])
     top = a.bounding_box().max.Z
-    assert top == pytest.approx(p.zs_["s0"] - p.zs_["bottom"])
+    assert top == pytest.approx(p.zs_["s0"] - p.enc_shaft_bottom)
     assert not a.is_inside((0, 0, top - 0.05)) and a.is_inside(
         (p.enc_shaft_d_lower / 2 - 0.1, 0, top - 0.05)
     )

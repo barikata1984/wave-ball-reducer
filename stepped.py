@@ -57,6 +57,7 @@ from pathlib import Path
 
 import numpy as np
 from build123d import (
+    Align,
     Axis,
     Box,
     Compound,
@@ -80,6 +81,8 @@ import components as cp
 import planetary as pl
 from planetary import half_thickness, herringbone, inv, outline, ring_half_space
 from reducer import BEARINGS, MIN, SCREW_LENGTHS
+
+CMIN = (Align.CENTER, Align.CENTER, Align.MIN)
 
 M8_LENGTHS = (16, 20, 25, 30, 35, 40)  # stock M8 low-head socket screws (DIN 7984) [mm]
 
@@ -141,14 +144,14 @@ class Params:
     hex_engage: float = 4.0  # sun boss into the adapter socket; floor 0.6 over the shaft top
     hex_clr: float = 0.15
     hex_chamfer: float = 0.4  # 45 deg at the adapter socket mouth (first layer squish)
-    # adapter shaft: down through the motor to the base underside, magnet for an encoder below
+    # adapter shaft: down through the motor into the base hole, magnet sensor_gap over the encoder
     # upper: near fit in the co-rotating hollow shaft (id 12.6); lower: snug centring fit in the
     # co-rotating plate hole, running clearance in the stationary base hole; 45 deg step between
     # them, ending enc_step_clr over the plate top
     enc_shaft_d_upper: float = 12.4
     enc_shaft_d_lower: float = 9.4
     enc_step_clr: float = 0.5
-    magnet_d: float = 3.2
+    magnet_d: float = 4.2
     magnet_depth: float = 2.1
     sun_seat_r: float = 8.5  # adapter seat under the sun's bottom face (s0); hex only drives
     sun_shaft_r: float = 9.0
@@ -198,6 +201,21 @@ class Params:
     wire_notch_deg: float = 45.0
     wire_notch_r0: float = 19.0
     wire_notch_w: float = 10.0
+    # MT6701 breakout under the base, components up toward the magnet: board in a pocket in
+    # the base underside, landing pads round its M2 holes, cavity for the parts between them
+    board_w: float = 22.0
+    board_t: float = 1.5
+    board_hole_off: float = 3.0  # M2 hole centres from each board edge
+    board_clr: float = 0.2  # pocket per side
+    board_recess: float = 0.5  # pocket depth: M2x4 tip 0.3 under the base top
+    board_screw_len: float = 4.0  # M2 cap screw through the board into blind pilot holes
+    m2_pilot_d: float = 1.6  # self-tapping into PETG
+    screw_tip_wall: float = 0.3  # screw tip to the base top, at least
+    pad_d: float = 5.0  # landing pads round the M2 holes
+    comp_h: float = 1.75  # tallest component on the board (unknown, assumed = sensor_h)
+    comp_clr: float = 0.3
+    sensor_h: float = 1.75  # SOP-8 max over the board top
+    sensor_gap: float = 0.75  # magnet face to package top (datasheet max 2.0 for d8x2.5)
     # cap thread on the housing top band: pitch 2, 45 deg flanks (90 deg included) print without
     # support, crest/root flats 0.2. thread_clr radial on both diameters: flank normal gap
     # 0.3 sin 45 = 0.21, FDM threads need ~0.2-0.4 (slide_clr 0.05 is for short smooth bores).
@@ -373,6 +391,14 @@ class Params:
     @property
     def enc_step_z(self) -> float:  # bottom of the shaft's 45 deg step
         return -self.motor_h + self.rotor_plate_t + self.enc_step_clr
+
+    @property
+    def board_top(self) -> float:  # board component face, against the pads
+        return self.zs_["bottom"] + self.board_recess
+
+    @property
+    def enc_shaft_bottom(self) -> float:  # magnet face, sensor_gap over the package
+        return self.board_top + self.sensor_h + self.sensor_gap
 
     @property
     def base_hole_r(self) -> float:  # base centre hole around the adapter shaft
@@ -556,6 +582,15 @@ def design_warnings(p: Params) -> list[str]:
         w.append("adapter shaft does not fit the hollow shaft")
     if (p.enc_shaft_d_lower - p.magnet_d) / 2 < p.min_wall:
         w.append("magnet hole wall under min_wall")
+    tip = p.board_top - p.board_t + p.board_screw_len
+    if tip > z["base_top"] - p.screw_tip_wall + 1e-9:
+        w.append(f"M2x{p.board_screw_len:g} tip {z['base_top'] - tip:.2f} under the base top")
+    if p.board_top + p.comp_h + p.comp_clr >= z["base_top"]:
+        w.append("encoder component cavity breaks through the base top")
+    if p.sensor_gap <= 0:
+        w.append("adapter shaft bottom does not clear the sensor")
+    if p.sensor_gap > 2.0:
+        w.append(f"magnet to sensor gap {p.sensor_gap} > 2.0 (datasheet max)")
     if p.hex_sock + p.hex_chamfer > p.sun_seat_r - p.min_wall or (
         p.zs_["s0"] - p.hex_engage - p.gear_gap < p.min_wall / 2 - 1e-9
     ):
@@ -798,7 +833,7 @@ def make_parts(p: Params) -> dict[str, Part]:
     parts["sun_adapter"] = cp.sun_adapter(
         p.adapter_r, p.adapter_t, p.sun_seat_r, z["s0"], p.hex_af, p.hex_clr,
         p.hex_engage + p.gear_gap, p.hex_chamfer, p.rotor_n, p.rotor_pcd, p.m3_clear_d,
-        (p.enc_shaft_d_upper / 2, p.enc_shaft_d_lower / 2), p.enc_step_z, z["bottom"], p.magnet_d, p.magnet_depth, p.rotor_phase_deg)  # fmt: skip
+        (p.enc_shaft_d_upper / 2, p.enc_shaft_d_lower / 2), p.enc_step_z, p.enc_shaft_bottom, p.magnet_d, p.magnet_depth, p.rotor_phase_deg)  # fmt: skip
 
     # sun: herringbone teeth at the large-gear level on a shaft, hex boss down into the adapter
     sun = _herring(p, outline(q1, p.zs, half_thickness(q1, p.zs, p.xs), p.r_tip_sun,
@@ -858,7 +893,24 @@ def make_parts(p: Params) -> dict[str, Part]:
     base -= (Rot(0, 0, p.stator_phase_deg + p.wire_notch_deg)
              * Pos(p.wire_notch_r0, -p.wire_notch_w / 2, z["bottom"])
              * Box(p.R_body - p.wire_notch_r0 + 1, p.wire_notch_w, p.base_t, align=MIN))  # fmt: skip
+    # encoder board pocket, component cavity between the corner pads, blind M2 pilot holes
+    pw = p.board_w + 2 * p.board_clr
+    base -= Pos(0, 0, z["bottom"]) * Box(pw, pw, p.board_recess, align=CMIN)
+    ch = p.comp_h + p.comp_clr
+    hc = p.board_w / 2 - p.board_hole_off
+    holes = [Pos(sx * hc, sy * hc, p.board_top) for sx in (-1, 1) for sy in (-1, 1)]
+    cav = Pos(0, 0, p.board_top) * Box(pw, pw, ch, align=CMIN)
+    for h in holes:
+        cav -= h * Cylinder(p.pad_d / 2, ch, align=MIN)
+    base -= cav
+    for h in holes:
+        base -= h * Cylinder(p.m2_pilot_d / 2, p.board_screw_len - p.board_t, align=MIN)
     parts["base"] = base
+    # placeholder board (bought): slab + sensor package, not printed
+    board = Pos(0, 0, p.board_top - p.board_t) * Box(p.board_w, p.board_w, p.board_t,
+                                                     align=CMIN)  # fmt: skip
+    board += Pos(0, 0, p.board_top) * Box(5, 4, p.sensor_h, align=CMIN)
+    parts["_encoder_MT6701"] = board
 
     # housing: motor tube, lip (in the lower), spur ring, thin shell, external cap thread on the top band
     zt0 = z["thread0"]
@@ -911,8 +963,9 @@ def pose(p: Params, home: dict[str, Part], psi: float) -> dict[str, Part]:
 
 
 # large face down; housing_lower on its lip top (the split face); sun on its top face (boss up);
-# sun_adapter on its seat face (shaft and magnet hole up, the disc ring needs support)
-PRINT_FLIP = {"lid", "carrier_output", "planet_0", "planet_1", "planet_2", "housing_lower",
+# sun_adapter on its seat face (shaft and magnet hole up, the disc ring needs support);
+# base on its top face (encoder pocket open upward, no bridges)
+PRINT_FLIP = {"base", "lid", "carrier_output", "planet_0", "planet_1", "planet_2", "housing_lower",
               "sun", "sun_adapter"}  # fmt: skip
 
 
@@ -980,6 +1033,7 @@ def bom(p: Params) -> str:
         (f"M3x{p.motor_screw_len(p.base_clamp, p.stator_thread_depth)} base -> stator",
          p.stator_n),
         (f"M3x{p.screw_len(p.base_clamp)} base -> housing_lower (hex hole)", p.n_base_screws),
+        (f"M2x{p.board_screw_len:g} cap MT6701 board -> base", 4),
         (f"M3x{p.screw_len(p.joint_clamp)} housing_upper -> housing_lower (hex hole)", p.n_joint),
     ]  # fmt: skip
     return "\n".join(f"  {n:3d} x {s}" for s, n in rows)
