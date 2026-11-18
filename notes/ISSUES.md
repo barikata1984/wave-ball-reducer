@@ -15,3 +15,5 @@
 - 案 2b の遊星の 608ZZ の下の床は、印刷向きで外径 20mm の輪状のブリッジになる (ほかの部品は 8.5mm 以下) ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
 - 案 2b の肉厚の余裕が 0 の箇所がある (結合ボルトの六角穴とモーター穴の間、大歯車の歯幅)。ここが外径と高さを決めている ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
 - 印籠リングは別体の細い輪 (直径約 75mm、断面 1.6×3.0mm) で、印刷で反るおそれがある ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
+- 段付き遊星の印刷キャリアのピン (直径 7.9mm) が層間で曲げ破断した。M4 芯ボルトで対処したが、ねじ底の曲げ応力は 249 MPa (入力 0.4 N·m) で実物での確認が未了 ([議事録](logs/2026-11-18_carrier-pin-m4-core-and-hub-clearance.md))
+- M4 キャップボルトの頭の寸法 (JIS B 1176、ローレット付き最大 7.22mm) は検索結果の抜粋でしか確かめていない ([議事録](logs/2026-11-18_carrier-pin-m4-core-and-hub-clearance.md))
