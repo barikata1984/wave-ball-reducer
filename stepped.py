@@ -16,7 +16,9 @@ reference values only (reference_loads), never pass/fail.
 
 Planet support: one 608ZZ per planet, pressed into the large gear's top end; the carrier's
 printed Ø8 pin goes through its inner race and on down through a plain bore in the small gear
-(a printed journal, radial clearance journal_clr). pin_kind="m8_bolt" swaps the printed pins
+(a printed journal, radial clearance journal_clr). By default (pin_kind="m4_core") an M4x20
+cap screw runs down each printed pin from the output face and carries the bending; "printed"
+leaves the pins plain. pin_kind="m8_bolt" swaps the printed pins
 for M8 low-head bolts screwed into the carrier from the output face.
 
 The housing is split at the ring teeth's bottom face (ring_lo = lip top). Both split faces are
@@ -85,6 +87,7 @@ from reducer import BEARINGS, MIN, SCREW_LENGTHS
 CMIN = (Align.CENTER, Align.CENTER, Align.MIN)
 
 M8_LENGTHS = (16, 20, 25, 30, 35, 40)  # stock M8 low-head socket screws (DIN 7984) [mm]
+M4_LENGTHS = (10, 12, 16, 20, 25, 30)  # stock M4 socket head cap screws (ISO 4762) [mm]
 
 
 @dataclass
@@ -161,7 +164,7 @@ class Params:
     bearing: str = "608ZZ"
     bearing_shoulder: float = 1.0  # outer race rests on the seat cone this far inside D/2
     inner_land_d: float = 12.0  # 608 inner-race face OD (assumed; catalogue d1 ~ 12)
-    pin_kind: str = "printed"  # or "m8_bolt"
+    pin_kind: str = "m4_core"  # or "printed", "m8_bolt"
     pin_fit_clr: float = 0.05  # pin radius d/2 - this: slip fit in the inner race
     # small-gear bore on the pin: printed hole on a printed pin, both ~0.1 off nominal; 0.05
     # (slide_clr) is for short locating fits, a 8 mm long running fit that must turn freely
@@ -173,6 +176,15 @@ class Params:
     bolt_head_d: float = 13.0  # M8 DIN 7984
     bolt_head_h: float = 5.0
     bolt_tap_d: float = 6.8  # the bolt cuts its thread in the printed carrier
+    # m4_core: M4 cap screw (ISO 4762) down the printed pin, head flush with the output face;
+    # clear hole above the last core_tap_len, where it cuts its thread in the pin
+    core_head_d: float = 7.22  # JIS B 1176: max head dia. with a knurled head
+    core_head_h: float = 4.0
+    core_cbore_d: float = 7.5  # >= core_head_d + 0.2: printed holes come out ~0.1 small
+    core_clear_d: float = 4.3
+    core_tap_d: float = 3.3
+    core_tap_len: float = 6.0
+    core_hole_extra: float = 0.5  # hole bottom under the screw tip, solid below
     # carrier and lid
     carrier_gap: float = 1.0
     carrier_t: float = 4.0  # >= output hole depth 8 - (out - c1) + min_wall
@@ -185,6 +197,9 @@ class Params:
     out_phase_deg: float = 45.0  # m8_bolt: use 3 holes at 60 deg, between the bolt heads
     lid_t: float = 2.7
     lid_bore_clr: float = 0.05
+    # radial; carrier hub (cylinder and 45 deg cone) undersize vs. the lid bore, which stays put.
+    # The test print turned but was tight with only lid_bore_clr (0.05) per side.
+    hub_shrink: float = 0.05
     lid_axial_clr: float = 0.05
     lid_rib_h: float = 1.0
     base_t: float = 3.3
@@ -413,6 +428,20 @@ class Params:
         return self.bolt_head_d / 2 + self.slide_clr
 
     @property
+    def core_cbore_r(self) -> float:
+        return self.core_cbore_d / 2
+
+    @property
+    def core_len(self) -> int:
+        """Longest stock M4 whose tip stays at or above s0 + 1 (m4_core variant)."""
+        need = self.zs_["out"] - self.core_head_h - (self.zs_["s0"] + 1.0)
+        return max(L for L in M4_LENGTHS if L <= need)
+
+    @property
+    def core_tip_z(self) -> float:
+        return self.zs_["out"] - self.core_head_h - self.core_len
+
+    @property
     def carrier_r(self) -> float:
         r = self.seat_d / 2 + self.carrier_wall
         if self.pin_kind == "m8_bolt":  # bolt-head counterbore inside the hub
@@ -422,6 +451,10 @@ class Params:
     @property
     def hub_r(self) -> float:
         return self.carrier_r - self.hub_step
+
+    @property
+    def carrier_hub_r(self) -> float:
+        return self.hub_r - self.hub_shrink
 
     @property
     def cavity_r(self) -> float:
@@ -633,6 +666,20 @@ def design_warnings(p: Params) -> list[str]:
                 c = p.a * np.exp(2j * math.pi * j / p.n_planets)
                 if abs(q - c) < p.bolt_cbore_r + p.m3_tap_d / 2 + 0.5:
                     w.append("output hole runs into an M8 head counterbore")
+    elif p.pin_kind == "m4_core":
+        if p.core_tip_z < z["s0"] + 1.0:
+            w.append(f"M4x{p.core_len} tip below s0 + 1")
+        if p.carrier_hub_r - (p.a + p.core_cbore_r) < p.min_wall - 1e-9:
+            w.append("M4 head counterbore leaves < min_wall of hub wall")
+        if p.core_cbore_d < p.core_head_d + 0.2 - 1e-9:
+            w.append("M4 head counterbore narrower than core_head_d + 0.2")
+        ro = p.hub_r / 2
+        for k in range(p.n_out_holes):
+            q = ro * np.exp(1j * math.radians(p.out_phase_deg + 360 * k / p.n_out_holes))
+            for j in range(p.n_planets):
+                c = p.a * np.exp(2j * math.pi * j / p.n_planets)
+                if abs(q - c) < p.core_cbore_r + p.m3_tap_d / 2 + 0.5:
+                    w.append("output hole runs into an M4 head counterbore")
     elif p.pin_kind != "printed":
         w.append(f"unknown pin_kind {p.pin_kind}")
     return w
@@ -670,7 +717,7 @@ def wall_thicknesses(p: Params) -> dict[str, float]:
         "base: wire notch to stator counterbore": p.stator_pcd / 2 * math.sin(math.radians(
             min(p.wire_notch_deg % (360 / p.stator_n), -p.wire_notch_deg % (360 / p.stator_n))))
         - p.wire_notch_w / 2 - p.cbore_r,
-        "hub around output holes": p.hub_r / 2 - p.m3_tap_d / 2,
+        "hub around output holes": p.carrier_hub_r - p.hub_r / 2 - p.m3_tap_d / 2,
         "carrier under the output holes": z["out"] - p.out_hole_depth - z["c0"],
         "planet tips": planet_tip_gap(p),
     }  # fmt: skip
@@ -856,14 +903,20 @@ def make_parts(p: Params) -> dict[str, Part]:
     mark_r = (p.seat_r + p.r_root(p.m1, p.z1, p.x1)) / 2  # phase mark on the large top face
     planet -= Pos(mark_r, 0, z["L1"] - 0.4) * Cylinder(0.5, 0.4, align=MIN)
 
-    carrier = Pos(0, 0, z["c0"]) * Cylinder(p.carrier_r, p.carrier_t, align=MIN)
-    carrier += Pos(0, 0, z["c1"]) * Cone(p.carrier_r, p.hub_r, p.hub_step, align=MIN)
-    zh = z["c1"] + p.hub_step
-    carrier += Pos(0, 0, zh) * Cylinder(p.hub_r, z["out"] - zh, align=MIN)
+    # hub cylinder and 45 deg cone offset inward by hub_shrink normal to their faces: the cone line
+    # drops s*sqrt2, so the cone leaves the disc rim (carrier_r kept) s*sqrt2 below c1, and the
+    # rim's cylindrical edge stops there too (no flat ledge, which would face down when printed)
+    s = p.hub_shrink
+    hc = p.hub_step - s * (math.sqrt(2) - 1)  # cone top above c1
+    z0 = z["c1"] - s * math.sqrt(2)
+    carrier = Pos(0, 0, z["c0"]) * Cylinder(p.carrier_r, z0 - z["c0"], align=MIN)
+    carrier += Pos(0, 0, z0) * Cone(p.carrier_r, p.carrier_hub_r, hc + s * math.sqrt(2), align=MIN)
+    zh = z["c1"] + hc
+    carrier += Pos(0, 0, zh) * Cylinder(p.carrier_hub_r, z["out"] - zh, align=MIN)
     carrier -= cp.ring_holes(p.n_out_holes, p.hub_r / 2, p.m3_tap_d, z["out"] - p.out_hole_depth,
                              p.out_hole_depth, p.out_phase_deg)  # fmt: skip
     zc = z["L1"] + p.seat_gap  # collar bottom, seat_gap over the inner race
-    if p.pin_kind == "printed":
+    if p.pin_kind in ("printed", "m4_core"):
         pin = cp.printed_pin(p.pin_r, z["s0"], z["c0"], p.pin_chamfer, p.seat_d / 2,
                              z["c0"] - zc)  # fmt: skip
     else:
@@ -871,6 +924,15 @@ def make_parts(p: Params) -> dict[str, Part]:
         zb = z["out"] - p.bolt_head_h
         bolt = Pos(0, 0, zb - p.bolt_len) * Cylinder(d / 2, p.bolt_len, align=MIN)
         bolt += Pos(0, 0, zb) * Cylinder(p.bolt_head_d / 2, p.bolt_head_h, align=MIN)
+    if p.pin_kind == "m4_core":
+        zb, tip = z["out"] - p.core_head_h, p.core_tip_z
+        zt = tip + p.core_tap_len
+        core = Pos(0, 0, tip) * Cylinder(2.0, p.core_len, align=MIN)  # M4 nominal
+        core += Pos(0, 0, zb) * Cylinder(p.core_head_d / 2, p.core_head_h, align=MIN)
+        hole = Pos(0, 0, zb) * Cylinder(p.core_cbore_r, p.core_head_h, align=MIN)
+        hole += Pos(0, 0, zt) * Cylinder(p.core_clear_d / 2, zb - zt, align=MIN)
+        lo = tip - p.core_hole_extra
+        hole += Pos(0, 0, lo) * Cylinder(p.core_tap_d / 2, zt - lo, align=MIN)
     for k, (c, turn) in enumerate(planet_states(p, 0.0)):
         x, y = c.real, c.imag
         parts[f"planet_{k}"] = Pos(x, y, 0) * planet.rotate(Axis.Z, math.degrees(turn))
@@ -880,6 +942,9 @@ def make_parts(p: Params) -> dict[str, Part]:
             carrier -= Pos(x, y, zc) * Cylinder(p.bolt_tap_d / 2, z["out"] - zc, align=MIN)
             carrier -= Pos(x, y, zb) * Cylinder(p.bolt_cbore_r, p.bolt_head_h, align=MIN)
             parts[f"_bolt_M8x{p.bolt_len}_{k}"] = Pos(x, y, 0) * bolt
+        elif p.pin_kind == "m4_core":
+            carrier -= Pos(x, y, 0) * hole
+            parts[f"_bolt_M4x{p.core_len}_{k}"] = Pos(x, y, 0) * core
     parts["carrier_output"] = carrier
 
     # base: under the stator, screwed to it and to the housing from below
@@ -1027,6 +1092,9 @@ def bom(p: Params) -> str:
     ]
     if p.pin_kind == "m8_bolt":
         rows.append((f"M8x{p.bolt_len} low head (DIN 7984) carrier -> planet pin", p.n_planets))
+    elif p.pin_kind == "m4_core":
+        rows.append((f"M4x{p.core_len} cap (ISO 4762, 12.9) core of the printed pins",
+                     p.n_planets))  # fmt: skip
     rows += [
         ((f"M3x{p.motor_screw_len(p.adapter_t, p.rotor_thread_depth)} ultra-low head "
           f"(ESCO, head {p.head_h}) adapter -> rotor"), p.rotor_n),
@@ -1050,7 +1118,7 @@ def summary(p: Params) -> str:
          f"{2 * p.r_ring_tip:.2f}/{2 * p.r_ring_root:.2f} swing R={p.R_sweep:.2f}"),
         (f"body d={s['D_body']:.2f} max d (cap)={s['D_max']:.2f} height={s['height']:.2f} "
          f"(bottom {z['bottom']:.2f} .. out {z['out']:.2f}) b1={p.b1} b2={p.b2} "
-         f"hub_d={2 * p.hub_r:.2f} pin={p.pin_kind} d={2 * p.pin_r:.2f} journal bore "
+         f"hub_d={2 * p.carrier_hub_r:.2f} pin={p.pin_kind} d={2 * p.pin_r:.2f} journal bore "
          f"d={2 * p.journal_r:.2f}"),
         "z: " + " ".join(f"{k}={v:.2f}" for k, v in z.items()),
         ("tip land sun/large/small/ring="

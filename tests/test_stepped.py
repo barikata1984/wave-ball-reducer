@@ -206,7 +206,13 @@ def test_no_interference_and_tooth_gap(home, k, psi):
     p = Params()
     parts = pose(p, home, psi)
     fixed = {n for n, v in parts.items() if v is home[n]}
-    assert interference(parts, skip=fixed) == [], psi
+    # the M4 cores cut their thread in the carrier (bounded in test_m4_core_pin)
+    bad = [
+        b
+        for b in interference(parts, skip=fixed)
+        if {b[0][:7], b[1]} != {"_bolt_M", "carrier_output"}
+    ]
+    assert bad == [], psi
     c = planet_states(p, psi)[k][0]
     planet = parts[f"planet_{k}"]
     g_sun = gear_gap(parts["sun"], planet, c, p.r_tip1, p.r_tip_sun, ring=False)
@@ -419,9 +425,14 @@ def test_lid_output_cone_prints_without_support(home, name):
     part = home[name]
     top = part.bounding_box().max.Z
     r_max = Params().R_shell  # the cone and bore, not the rim (grip grooves, ratchet arm)
+    pins = [c for c, _ in planet_states(Params(), 0.0)]
+    # c1 - 0.1: the shrunken carrier cone starts hub_shrink*sqrt2 below c1
+    # pin-core holes excluded: their flat floors are bridges (test_print_without_support)
     region = [f for f in part.faces()
-              if z["c1"] - 1e-6 < f.bounding_box().min.Z < top - 1e-6
-              and math.hypot(f.center().X, f.center().Y) < r_max]  # fmt: skip
+              if z["c1"] - 0.1 < f.bounding_box().min.Z < top - 1e-6
+              and math.hypot(f.center().X, f.center().Y) < r_max
+              and all(abs(complex(f.center().X, f.center().Y) - c) > Params().core_cbore_r + 1e-6
+                      for c in pins)]  # fmt: skip
     assert any(f.geom_type == GeomType.CONE for f in region)
     for f in region:
         nz = -f.normal_at().Z
@@ -559,3 +570,81 @@ def test_m8_bolt_variant():
     d, L = 8.0, p.bolt_len
     cut = vol(parts[bolts[0]], parts["carrier_output"])
     assert 0 < cut <= math.pi / 4 * (d**2 - p.bolt_tap_d**2) * L + 1e-6
+
+
+def test_m4_core_pin(home):
+    """Default pin_kind='m4_core': an M4 cap screw down the printed pin from the output face."""
+    p, z = Params(), Params().zs_
+    assert p.pin_kind == "m4_core"
+    carrier = home["carrier_output"]
+    bolts = [n for n in home if n.startswith("_bolt_M4")]
+    assert sorted(bolts) == [f"_bolt_M4x20_{k}" for k in range(p.n_planets)]
+    assert p.core_len == 20 and p.core_tip_z == pytest.approx(10.6)
+    assert p.core_tip_z >= z["s0"] + 1.0
+    c = planet_states(p, 0.0)[0][0]
+    u = c / abs(c)
+
+    def inside(r: float, zz: float) -> bool:
+        q = c + r * u * 1j
+        return carrier.is_inside((q.real, q.imag, zz))
+
+    zb = z["out"] - p.core_head_h  # counterbore floor = head underside
+    assert zb == pytest.approx(30.6)
+    tip, zt = p.core_tip_z, p.core_tip_z + p.core_tap_len
+    for r_hole, z_lo, z_hi in ((7.5 / 2, zb, z["out"]), (4.3 / 2, zt, zb),
+                               (3.3 / 2, tip - 0.5, zt)):  # fmt: skip
+        for zz in (z_lo + 0.1, z_hi - 0.1):
+            assert not inside(r_hole - 0.02, zz), (r_hole, zz)
+            assert inside(r_hole + 0.02, zz), (r_hole, zz)
+    assert inside(0, zb - 0.1) is False and inside(0, tip - 0.5 - 0.05)  # solid under the hole
+    assert inside(3.0, zb - 0.1)  # floor under the counterbore rim
+    # hub wall outside the counterbore, carrier sizes unchanged by the counterbore
+    assert p.carrier_hub_r - (p.a + p.core_cbore_r) == pytest.approx(1.45)
+    assert p.core_cbore_d == 7.5 and p.core_cbore_r == pytest.approx(3.75)
+    assert p.carrier_r == Params(pin_kind="printed").carrier_r
+    assert max_bridge(print_pose("carrier_output", carrier)) == pytest.approx(7.5, abs=0.01)
+    # bolt in its hole: overlaps the carrier only in the tapped part, clear of the others
+    cut = vol(home[bolts[0]], carrier)
+    assert 0 < cut <= math.pi / 4 * (4.0**2 - 3.3**2) * p.core_tap_len + 1e-6
+    for psi in (0.0, 2.0):
+        q = pose(p, home, psi)
+        sub = {n: q[n] for n in (*bolts, "planet_0", "planet_1", "planet_2",
+                                 "_bearing_608ZZ_0", "_bearing_608ZZ_1", "_bearing_608ZZ_2")}  # fmt: skip
+        assert interference(sub) == [], psi
+    assert design_warnings(p) == []
+    assert any("M4" in w for w in design_warnings(Params(carrier_wall=1.0)))
+    assert any("core_head_d + 0.2" in w for w in design_warnings(Params(core_cbore_d=7.3)))
+    assert any(
+        "output hole" in w for w in design_warnings(Params(out_phase_deg=0.0, core_cbore_d=14.0))
+    )
+
+
+def _edge(solid, p0, d, lo, hi, n=40):
+    """Distance t in [lo, hi] along p0 + t d where solid membership flips (bisection)."""
+    at = lambda t: tuple(a + t * b for a, b in zip(p0, d))
+    first = solid.is_inside(at(lo))
+    for _ in range(n):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if solid.is_inside(at(mid)) == first else (lo, mid)
+    return (lo + hi) / 2
+
+
+def test_hub_shrink_gap(home):
+    """Carrier hub sits hub_shrink inside nominal; the lid bore stays where it was."""
+    p, z = Params(), Params().zs_
+    lid, carrier = home["lid"], home["carrier_output"]
+    zz = (z["lid"] + z["top"]) / 2
+    r_hub = _edge(carrier, (0, 0, zz), (1, 0, 0), 25.0, p.hub_r + 0.5)
+    r_bore = _edge(lid, (0, 0, zz), (1, 0, 0), 25.0, p.hub_r + 0.5)
+    assert 2 * r_hub == pytest.approx(52.20, abs=1e-3)
+    assert r_bore - r_hub == pytest.approx(0.10, abs=1e-3)
+    # normal gap on the 45 deg cone, probed along the outward normal through its mid-line
+    zm = z["c1"] + p.hub_step / 2
+    p0, n = (p.carrier_r - p.hub_step / 2 - 0.5, 0, zm - 0.5), (2**-0.5, 0, 2**-0.5)
+    tc = _edge(carrier, p0, n, 0.0, 1.5)
+    tl = _edge(lid, p0, n, 0.0, 1.5)
+    assert tl - tc == pytest.approx(p.lid_bore_clr + p.hub_shrink, abs=1e-3)
+    ref = lid_part(Params(hub_shrink=0.0))
+    assert lid.volume == pytest.approx(ref.volume, rel=1e-9)
+    a, b = lid.bounding_box(), ref.bounding_box()
+    assert [*a.min, *a.max] == pytest.approx([*b.min, *b.max])
