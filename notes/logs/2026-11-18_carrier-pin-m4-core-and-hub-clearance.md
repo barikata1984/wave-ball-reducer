@@ -81,9 +81,8 @@ M5 は、頭を沈める直径 8.6mm の座ぐりの底が、サポートなし�
 - `README.md`: 遊星の支持の節、部品表 (M4×20 ×3)、すきまの一覧とキャリア支持の段落
 - `viewer.html`: `?model=stepped` で `out_stepped/` を表示
 - `out_stepped/` (gitignore 対象): 再生成 (`carrier_output.stl` 2026-11-18 17:56)。`hub_shrink` の前後で `lid.stl` はバイト単位で一致し、ふたの体積と外接直方体も同じ
-- コミットなし。`stepped.py`、`tests/test_stepped.py`、`README.md`、`viewer.html` は未コミット
+- コミット a7f7eb0 (ビューア)、94767d8 (キャリアピンとハブ)、da3881d (議事録) を origin/main へプッシュ
 
 ## Open Items
 - 新しいキャリア (`out_stepped/carrier_output.stl`) を刷り、M4×20 を通してピンが折れないか、ハブとふた穴のはめあい (すきま 0.10mm) が軽く回るかを確かめる
 - M4 キャップボルトの頭の寸法 (JIS B 1176) は検索の抜粋でしか確かめていない。買うボルトの頭の直径を実測する
-- 未コミットの 4 ファイル (`stepped.py`、`tests/test_stepped.py`、`README.md`、`viewer.html`) をコミットするかユーザーが決める

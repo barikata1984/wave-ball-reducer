@@ -25,4 +25,4 @@
 - [ ] 案 2b を組み、608ZZ 1 個とすべり軸受で支えた遊星が傾かずに回るかを確かめる ([議事録](logs/2026-11-10_fdm-clearance-tightening.md))
 - [ ] 新しいキャリア (M4×20 芯ボルト入り、ハブとふた穴のすきま 0.10mm) を刷り、ピンが折れないか、ふた穴で軽く回るかを確かめる ([議事録](logs/2026-11-18_carrier-pin-m4-core-and-hub-clearance.md))
 - [ ] 買った M4 キャップボルトの頭の直径を実測し、座ぐり 7.5mm に入るかを確かめる ([議事録](logs/2026-11-18_carrier-pin-m4-core-and-hub-clearance.md))
-- [ ] 未コミットの 4 ファイル (`stepped.py`、`tests/test_stepped.py`、`README.md`、`viewer.html`) をコミットするか決める ([議事録](logs/2026-11-18_carrier-pin-m4-core-and-hub-clearance.md))
+- [x] 未コミットの 4 ファイル (`stepped.py`、`tests/test_stepped.py`、`README.md`、`viewer.html`) をコミットするか決める ([議事録](logs/2026-11-18_carrier-pin-m4-core-and-hub-clearance.md))
