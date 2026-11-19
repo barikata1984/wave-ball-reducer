@@ -176,7 +176,7 @@ class Params:
     bolt_head_d: float = 13.0  # M8 DIN 7984
     bolt_head_h: float = 5.0
     bolt_tap_d: float = 6.8  # the bolt cuts its thread in the printed carrier
-    # m4_core: M4 cap screw (ISO 4762) down the printed pin, head flush with the output face;
+    # m4_core: M4 cap screw (ISO 4762) down the printed pin, head core_cbore_extra under the output face;
     # clear hole above the last core_tap_len, where it cuts its thread in the pin
     core_head_d: float = 7.22  # JIS B 1176: max head dia. with a knurled head
     core_head_h: float = 4.0
@@ -184,6 +184,7 @@ class Params:
     core_clear_d: float = 4.3
     core_tap_d: float = 3.3
     core_tap_len: float = 6.0
+    core_cbore_extra: float = 0.5  # counterbore below the head: printed heads did not sink flush
     core_hole_extra: float = 0.5  # hole bottom under the screw tip, solid below
     # carrier and lid
     carrier_gap: float = 1.0
@@ -220,8 +221,8 @@ class Params:
     # the base underside, landing pads round its M2 holes, cavity for the parts between them
     board_w: float = 22.0
     board_t: float = 1.5
-    board_hole_off: float = 3.0  # M2 hole centres from each board edge
-    board_clr: float = 0.2  # pocket per side
+    board_hole_off: float = 2.5  # M2 hole centres from each board edge (measured on the board)
+    board_clr: float = 1.2  # pocket per side (pocket 24.4, widened after a test print)
     board_recess: float = 0.5  # pocket depth: M2x4 tip 0.3 under the base top
     board_screw_len: float = 4.0  # M2 cap screw through the board into blind pilot holes
     m2_pilot_d: float = 1.6  # self-tapping into PETG
@@ -256,8 +257,10 @@ class Params:
     m3_clear_d: float = 3.4
     m3_tap_d: float = 2.5
     screw_d: float = 3.0
+    tap_af: float = 2.675  # self-tap hex AF = M3 pitch dia d - 0.6495 P (JIS B 0205, ISO 724)
     screw_engage: float = 6.0
-    hex_hole_extra: float = 1.0
+    tap_depth: float = 15.0  # self-tap hex holes into housing_lower, both sets (screw takes 8.7);
+    # the sets overlap in z but sit at different angles (see design_warnings)
     screw_head_d: float = 5.5
     joint_head_h: float = 3.0  # ISO 4762 M3 socket head
     fit_clr: float = 0.05
@@ -343,7 +346,7 @@ class Params:
         return self.motor_d / 2 + self.motor_clr
 
     @property
-    def hex_circ(self) -> float:  # circumradius of an M3 hex hole
+    def hex_circ(self) -> float:  # wall keep-out of a tapped M3 hole (>= screw_d / 2, tap_af hex)
         return self.screw_d / 2 / math.cos(math.pi / 6)
 
     @property
@@ -434,12 +437,16 @@ class Params:
     @property
     def core_len(self) -> int:
         """Longest stock M4 whose tip stays at or above s0 + 1 (m4_core variant)."""
-        need = self.zs_["out"] - self.core_head_h - (self.zs_["s0"] + 1.0)
+        need = self.core_seat_z - (self.zs_["s0"] + 1.0)
         return max(L for L in M4_LENGTHS if L <= need)
 
     @property
     def core_tip_z(self) -> float:
-        return self.zs_["out"] - self.core_head_h - self.core_len
+        return self.core_seat_z - self.core_len
+
+    @property
+    def core_seat_z(self) -> float:  # counterbore floor = head underside
+        return self.zs_["out"] - self.core_head_h - self.core_cbore_extra
 
     @property
     def carrier_r(self) -> float:
@@ -644,6 +651,20 @@ def design_warnings(p: Params) -> list[str]:
         w.append("joint screw heads stand above the ring top")
     if p.R_body > p.R_cap + 1e-9:
         w.append("housing body wider than the cap")
+    if p.tap_depth > z["split"] - z["base_top"]:
+        w.append("hex hole longer than housing_lower: it exits the opposite face")
+    if z["split"] - p.tap_depth < z["base_top"] + p.tap_depth:  # the two sets overlap in z
+
+        def pol(r: float, deg: float) -> tuple[float, float]:
+            return r * math.cos(math.radians(deg)), r * math.sin(math.radians(deg))
+
+        gap = min(math.dist(pol(p.joint_r, p.joint_phase_deg + 360 * i / p.n_joint),
+                            pol(p.base_screw_r, p.stator_phase_deg + 360 * k / p.n_base_screws))
+                  for i in range(p.n_joint) for k in range(p.n_base_screws))  # fmt: skip
+        if gap - 2 * p.hex_circ < p.min_wall:
+            w.append("joint and base hex holes closer than min_wall where they overlap in z")
+    if p.tap_depth < max(p.screw_len(c) - c for c in (p.joint_clamp, p.base_clamp)):
+        w.append("tap_depth shorter than the screw engagement: screws bottom out")
     if p.screw_len(p.joint_clamp) - p.joint_clamp < 4:
         w.append("joint screws engage < 4 mm in the tube")
     if p.R_motor_bore < p.r_ring_tip:
@@ -925,11 +946,11 @@ def make_parts(p: Params) -> dict[str, Part]:
         bolt = Pos(0, 0, zb - p.bolt_len) * Cylinder(d / 2, p.bolt_len, align=MIN)
         bolt += Pos(0, 0, zb) * Cylinder(p.bolt_head_d / 2, p.bolt_head_h, align=MIN)
     if p.pin_kind == "m4_core":
-        zb, tip = z["out"] - p.core_head_h, p.core_tip_z
+        zb, tip = p.core_seat_z, p.core_tip_z
         zt = tip + p.core_tap_len
         core = Pos(0, 0, tip) * Cylinder(2.0, p.core_len, align=MIN)  # M4 nominal
         core += Pos(0, 0, zb) * Cylinder(p.core_head_d / 2, p.core_head_h, align=MIN)
-        hole = Pos(0, 0, zb) * Cylinder(p.core_cbore_r, p.core_head_h, align=MIN)
+        hole = Pos(0, 0, zb) * Cylinder(p.core_cbore_r, z["out"] - zb, align=MIN)
         hole += Pos(0, 0, zt) * Cylinder(p.core_clear_d / 2, zb - zt, align=MIN)
         lo = tip - p.core_hole_extra
         hole += Pos(0, 0, lo) * Cylinder(p.core_tap_d / 2, zt - lo, align=MIN)
@@ -994,15 +1015,15 @@ def make_parts(p: Params) -> dict[str, Part]:
     h -= cp.ratchet_notches_cut(p.R_shell - 1, p.R_crest + 1, z["lid"], p.n_notches, tooth_deg(p),
                                 sum(tooth_r(p)) / 2, p.tooth_h, p.tooth_flat,
                                 p.notch_play)  # fmt: skip
-    hd = p.screw_len(p.base_clamp) - p.base_clamp + p.hex_hole_extra
     for k in range(p.n_base_screws):
         ph = math.radians(p.stator_phase_deg) + 2 * math.pi * k / p.n_base_screws
-        h -= cp.hex_prism(p.screw_d, z["base_top"], hd, p.base_screw_r * math.cos(ph),
+        h -= cp.hex_prism(p.tap_af, z["base_top"], p.tap_depth, p.base_screw_r * math.cos(ph),
                           p.base_screw_r * math.sin(ph))  # fmt: skip
+    L = p.screw_len(p.joint_clamp)  # hex_extra below makes the joint holes tap_depth deep
     upper, lower, ring = cp.split_housing(
         h, z["split"], p.R_body, p.spigot_r[0], p.spigot_w, p.spigot_h, p.spigot_in_clr,
-        p.slide_clr, p.n_joint, p.joint_r, p.joint_phase_deg, p.joint_clamp, z["s1"], p.screw_d,
-        p.m3_clear_d, p.screw_head_d, p.screw_len(p.joint_clamp), p.hex_hole_extra)  # fmt: skip
+        p.slide_clr, p.n_joint, p.joint_r, p.joint_phase_deg, p.joint_clamp, z["s1"], p.tap_af,
+        p.m3_clear_d, p.screw_head_d, L, p.tap_depth - (L - p.joint_clamp))  # fmt: skip
     parts["housing_upper"] = upper
     parts["housing_lower"] = lower
     parts["spigot_ring"] = ring

@@ -270,17 +270,17 @@ def test_adapter_shaft_and_magnet(home):
 
 
 def test_encoder_board_mount(home):
-    """Board pocket 22.4 square x board_recess, corner pads, blind M2 pilots 0.3 under the base
+    """Board pocket 24.4 square x board_recess, corner pads, blind M2 pilots 0.3 under the base
     top, component cavity with a floor left; the placeholder board fits without overlap."""
     p, z = Params(), Params().zs_
     base, zb = home["base"], z["bottom"]
     h = p.board_w / 2 + p.board_clr
     assert not base.is_inside((h - 0.05, 0, zb + 0.1)) and base.is_inside((h + 0.05, 0, zb + 0.1))
-    assert base.is_inside((8 + 2.0, 8, zb + p.board_recess + 0.05))  # pad face
-    assert not base.is_inside((8 + 2.0, 8, zb + p.board_recess - 0.05))
+    assert base.is_inside((8.5 + 2.0, 8.5, zb + p.board_recess + 0.05))  # pad face
+    assert not base.is_inside((8.5 + 2.0, 8.5, zb + p.board_recess - 0.05))
     tip = p.board_top - p.board_t + p.board_screw_len
     assert z["base_top"] - tip == pytest.approx(0.3)
-    assert not base.is_inside((8, 8, tip - 0.05)) and base.is_inside((8, 8, tip + 0.05))
+    assert not base.is_inside((8.5, 8.5, tip - 0.05)) and base.is_inside((8.5, 8.5, tip + 0.05))
     top = p.board_top + p.comp_h + p.comp_clr
     assert not base.is_inside((0, 10, top - 0.05)) and base.is_inside((0, 10, top + 0.05))
     assert top < z["base_top"]
@@ -511,7 +511,7 @@ def test_housing_joint_screws(home):
     assert L == 12 and L - p.joint_clamp >= 6  # stock cap screw, 6+ mm in the tube
     # head (3 mm) inside the counterbore below the ring top; hex hole longer than the screw tip
     assert z["joint_seat"] + p.joint_head_h <= z["s1"]
-    assert L - p.joint_clamp + p.hex_hole_extra <= z["split"] - z["base_top"]
+    assert L - p.joint_clamp < p.tap_depth <= z["split"] - z["base_top"]
     for k in range(p.n_joint):
         a = math.radians(p.joint_phase_deg) + 2 * math.pi * k / p.n_joint
         x, y = p.joint_r * math.cos(a), p.joint_r * math.sin(a)
@@ -523,6 +523,15 @@ def test_housing_joint_screws(home):
         assert up.is_inside((*seat[:2], seat[2] - 0.05))
         assert not up.is_inside((*seat[:2], seat[2] + 0.05))
         assert not lo.is_inside((x, y, z["split"] - (L - p.joint_clamp) + 0.1))
+        # tap_af hex, tap_depth deep
+        zb = z["split"] - p.tap_depth
+        rc = p.tap_af / math.sqrt(3)
+        assert not lo.is_inside((x, y, zb + 0.1)) and lo.is_inside((x, y, zb - 0.1))
+        for t in range(12):
+            u, v = math.cos(t * math.pi / 6), math.sin(t * math.pi / 6)
+            assert not lo.is_inside((x + (p.tap_af / 2 - 0.02) * u, y + (p.tap_af / 2 - 0.02) * v,
+                                     zb + 1))  # fmt: skip
+            assert lo.is_inside((x + (rc + 0.02) * u, y + (rc + 0.02) * v, zb + 1))
         screw = Pos(x, y, z["joint_seat"] - L) * Cylinder(p.screw_d / 2 - 0.3, L, align=MIN)
         assert vol(screw, up) < 1e-3 and vol(screw, lo) < 1e-3
         col = Pos(x, y, z["joint_seat"] + 0.01) * Cylinder(p.cbore_r - 0.02, z["lid"], align=MIN)
@@ -579,7 +588,7 @@ def test_m4_core_pin(home):
     carrier = home["carrier_output"]
     bolts = [n for n in home if n.startswith("_bolt_M4")]
     assert sorted(bolts) == [f"_bolt_M4x20_{k}" for k in range(p.n_planets)]
-    assert p.core_len == 20 and p.core_tip_z == pytest.approx(10.6)
+    assert p.core_len == 20 and p.core_tip_z == pytest.approx(10.1)
     assert p.core_tip_z >= z["s0"] + 1.0
     c = planet_states(p, 0.0)[0][0]
     u = c / abs(c)
@@ -588,8 +597,8 @@ def test_m4_core_pin(home):
         q = c + r * u * 1j
         return carrier.is_inside((q.real, q.imag, zz))
 
-    zb = z["out"] - p.core_head_h  # counterbore floor = head underside
-    assert zb == pytest.approx(30.6)
+    zb = p.core_seat_z  # counterbore floor = head underside, head 0.5 under the output face
+    assert zb == pytest.approx(30.1) and z["out"] - zb == pytest.approx(4.5)
     tip, zt = p.core_tip_z, p.core_tip_z + p.core_tap_len
     for r_hole, z_lo, z_hi in ((7.5 / 2, zb, z["out"]), (4.3 / 2, zt, zb),
                                (3.3 / 2, tip - 0.5, zt)):  # fmt: skip
